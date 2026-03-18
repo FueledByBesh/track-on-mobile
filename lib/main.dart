@@ -19,11 +19,12 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF3A4A5C),
+          // seedColor: const Color(0xFF3A4A5C),
+          seedColor: const Color.fromARGB(255, 140, 85, 62),
           brightness: Brightness.light,
         ),
         // scaffoldBackgroundColor: const Color(0xFFFAFBFC),
-        scaffoldBackgroundColor: const Color.fromARGB(255, 41, 130, 220),
+        scaffoldBackgroundColor: const Color.fromARGB(255, 246, 247, 255),
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFFFAFBFC),
           elevation: 0,
@@ -74,7 +75,7 @@ class _MainNavigationState extends State<MainNavigation> {
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white.withAlpha(200),
+              color: Colors.white.withAlpha(220),
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(20),
               ),
@@ -85,6 +86,7 @@ class _MainNavigationState extends State<MainNavigation> {
                   icon: Icon(Icons.home_outlined),
                   activeIcon: Icon(Icons.home),
                   label: 'Home',
+                  tooltip: "Hello World",
                 ),
                 BottomNavigationBarItem(
                   icon: Icon(Icons.directions_run_outlined),
