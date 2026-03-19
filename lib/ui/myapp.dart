@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:trackon_mobile/pages/homepage.dart';
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -44,7 +45,7 @@ class _MainNavigationState extends State<MainNavigation> {
   int _selectedIndex = 0;
 
   final List<Widget> _pages = [
-    const Center(child: Text('Home Page')),
+    const HomePage(),
     const Center(child: Text('Run Page')),
     const Center(child: Text('Fitness Page')),
     const Center(child: Text('Groups Page')),
