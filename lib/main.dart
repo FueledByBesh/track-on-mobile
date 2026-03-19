@@ -1,9 +1,5 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'pages/home_page.dart';
-import 'pages/search_page.dart';
-import 'pages/add_page.dart';
-import 'pages/profile_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -52,10 +48,10 @@ class _MainNavigationState extends State<MainNavigation> {
   int _selectedIndex = 0;
 
   final List<Widget> _pages = [
-    const HomePage(),
-    const SearchPage(),
-    const AddPage(),
-    const ProfilePage(),
+    const Center(child: Text('Home Page')),
+    const Center(child: Text('Run Page')),
+    const Center(child: Text('Fitness Page')),
+    const Center(child: Text('Groups Page')),
   ];
 
   void _onItemTapped(int index) {
