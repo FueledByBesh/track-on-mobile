@@ -1,9 +1,8 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'pages/home_page.dart';
-import 'pages/search_page.dart';
-import 'pages/add_page.dart';
-import 'pages/profile_page.dart';
+import 'pages/run_page.dart';
+import 'pages/fitness_page.dart';
+import 'pages/groups_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -19,12 +18,10 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          // seedColor: const Color(0xFF3A4A5C),
-          seedColor: const Color.fromARGB(255, 140, 85, 62),
+          seedColor: const Color(0xFF6B5FFF),
           brightness: Brightness.light,
         ),
-        // scaffoldBackgroundColor: const Color(0xFFFAFBFC),
-        scaffoldBackgroundColor: const Color.fromARGB(255, 246, 247, 255),
+        scaffoldBackgroundColor: const Color(0xFFFAFBFC),
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFFFAFBFC),
           elevation: 0,
@@ -49,71 +46,39 @@ class MainNavigation extends StatefulWidget {
 }
 
 class _MainNavigationState extends State<MainNavigation> {
-  int _selectedIndex = 0;
+  int _currentIndex = 0;
 
   final List<Widget> _pages = [
     const HomePage(),
-    const SearchPage(),
-    const AddPage(),
-    const ProfilePage(),
+    const RunPage(),
+    const FitnessPage(),
+    const GroupsPage(),
   ];
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBody: true,
-      body: _pages[_selectedIndex],
-      bottomNavigationBar: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withAlpha(220),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(20),
-              ),
-            ),
-            child: BottomNavigationBar(
-              items: const <BottomNavigationBarItem>[
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.home_outlined),
-                  activeIcon: Icon(Icons.home),
-                  label: 'Home',
-                  tooltip: "Hello World",
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.directions_run_outlined),
-                  activeIcon: Icon(Icons.directions_run),
-                  label: 'Run',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.fitness_center_outlined),
-                  activeIcon: Icon(Icons.fitness_center),
-                  label: 'Fitness',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.group_outlined),
-                  activeIcon: Icon(Icons.group),
-                  label: 'Groups',
-                ),
-              ],
-              currentIndex: _selectedIndex,
-              onTap: _onItemTapped,
-              type: BottomNavigationBarType.fixed,
-              backgroundColor: Colors.transparent,
-              selectedItemColor: const Color(0xFF2D8E7F),
-              unselectedItemColor: const Color(0xFF8B95A5),
-              elevation: 0,
-            ),
+      body: _pages[_currentIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        type: BottomNavigationBarType.fixed,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.directions_run),
+            label: 'Run',
           ),
-        ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.fitness_center),
+            label: 'Fitness',
+          ),
+          BottomNavigationBarItem(icon: Icon(Icons.group), label: 'Groups'),
+        ],
       ),
     );
   }
