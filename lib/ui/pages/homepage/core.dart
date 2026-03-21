@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'statistics.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -17,34 +18,20 @@ class HomePage extends StatelessWidget {
 class HomePageBody extends StatelessWidget {
   const HomePageBody({super.key});
   static const double height = 200;
+  static const double horizontalPadding = 16;
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
+      padding: EdgeInsets.fromLTRB(
+        horizontalPadding,
+        MediaQuery.of(context).padding.top,
+        horizontalPadding,
+        0,
+      ),
       child: Column(
-        children: [
-          Container(
-            height: height,
-            decoration: BoxDecoration(color: Colors.blue),
-          ),
-          Container(
-            height: height,
-            decoration: BoxDecoration(color: Colors.red),
-          ),
-          Container(
-            height: height,
-            decoration: BoxDecoration(color: Colors.yellow),
-          ),
-          Container(
-            height: height,
-            decoration: BoxDecoration(color: Colors.green),
-          ),
-          Container(
-            height: height,
-            decoration: BoxDecoration(color: Colors.purple),
-          ),
-        ],
+        spacing: 20,
+        children: [const Statistics(), const SizedBox(height: 20)],
       ),
     );
   }

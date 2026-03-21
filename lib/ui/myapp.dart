@@ -1,6 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:trackon_mobile/pages/homepage.dart';
+import 'package:trackon_mobile/ui/pages/homepage/core.dart';
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
