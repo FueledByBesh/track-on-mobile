@@ -9,7 +9,7 @@ class StatisticsData {
   final String todayValue;
   final List<double> weeklyData; // 7 days of data
 
-  StatisticsData({
+  const StatisticsData({
     required this.label,
     required this.icon,
     required this.iconColor,
@@ -42,39 +42,42 @@ class _SizeData {
 
 class _SizeDataTween extends Tween<_SizeData> {
   _SizeDataTween({required _SizeData begin, required _SizeData end})
-      : super(begin: begin, end: end);
+    : super(begin: begin, end: end);
 
   @override
   _SizeData lerp(double t) => _SizeData.lerp(begin!, end!, t);
 }
 
 class _PositionData {
-
-  final double? width, height;
+  // final double? width, height;
   final double fromTop, fromLeft;
 
-  const _PositionData({required this.fromTop, required this.fromLeft})
-      : width = null,
-        height = null;
+  const _PositionData({required this.fromTop, required this.fromLeft});
 
-  const _PositionData.fromLT({required double left, required double top, this.width, this.height})
-      : fromTop = top,
-        fromLeft = left;
+  const _PositionData.fromLT({required double left, required double top})
+    : fromTop = top,
+      fromLeft = left;
 
-  const _PositionData.fromRB({required double right, required double bottom, required double width, required double height})
-      : width = width,
-        height = height,
-        fromTop = height - bottom,
-        fromLeft = width - right;
+  const _PositionData.fromRB({
+    required double right,
+    required double bottom,
+    required double width,
+    required double height,
+  }) : fromTop = height - bottom,
+       fromLeft = width - right;
 
-  const _PositionData.fromLB({required double left, required double bottom, this.width, required double height})
-      : height = height,
-        fromTop = height - bottom,
-        fromLeft = left;
-  const _PositionData.fromRT({required double right, required double top, required double width, this.height})
-      : width = width,
-        fromTop = top,
-        fromLeft = width - right;
+  const _PositionData.fromLB({
+    required double left,
+    required double bottom,
+    required double height,
+  }) : fromTop = height - bottom,
+       fromLeft = left;
+  const _PositionData.fromRT({
+    required double right,
+    required double top,
+    required double width,
+  }) : fromTop = top,
+       fromLeft = width - right;
 
   static _PositionData lerp(_PositionData a, _PositionData b, double t) {
     return _PositionData(
@@ -86,16 +89,15 @@ class _PositionData {
 
 class _PositionDataTween extends Tween<_PositionData> {
   _PositionDataTween({required _PositionData begin, required _PositionData end})
-      : super(begin: begin, end: end);
+    : super(begin: begin, end: end);
 
   @override
   _PositionData lerp(double t) => _PositionData.lerp(begin!, end!, t);
 }
 
 class _StatisticsState extends State<StatisticsWidget>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
-  late String expandedIndex;
 
   late String expandedOne;
   late String shrinkedLeft;
@@ -109,135 +111,141 @@ class _StatisticsState extends State<StatisticsWidget>
   late Animation<_PositionData> moveShrinkingAnimRight;
   late Animation<_PositionData> moveShrinkedAnimLeft;
   late Animation<_PositionData> moveShrinkedAnimRight;
+  late Animation<_SizeData> unchangedSize;
 
-  late List<StatisticsData> statisticsData;
+  static const double widgetWidth = 380;
+  static const double widgetHeight = 350;
 
-  static const double expandedBarWidth = 350;
-  static const double expandedBarHeight = 300;
+  static const double expandedBarWidth = widgetWidth;
+  static const double expandedBarHeight = 230;
 
-  static const double shrinkedBarWidth = 165;
-  static const double shrinkedBarHeight = 150;
-
-  static const double widgetWidth = expandedBarWidth;
-  static const double widgetHeight = expandedBarHeight + shrinkedBarHeight + 20;
+  static const double shrinkedBarWidth = (widgetWidth - 20) / 2;
+  static const double shrinkedBarHeight = 100;
 
   @override
   void initState() {
     super.initState();
-    expandedIndex = 'steps'; // Steps expanded by default
+    expandedOne = 'a';
+    shrinkedLeft = 'b';
+    shrinkedRight = 'c';
     const defaultCurve = Curves.easeInOut;
-
-    statisticsData = [
-      StatisticsData(
-        label: 'Steps',
-        icon: Icons.directions_walk,
-        iconColor: const Color(0xFF6366F1),
-        unit: 'steps',
-        todayValue: '8,432',
-        weeklyData: [6200, 7500, 8200, 8432, 7100, 6800, 7900],
-      ),
-      StatisticsData(
-        label: 'Activity',
-        icon: Icons.access_time,
-        iconColor: const Color.fromARGB(255, 106, 226, 97),
-        unit: 'min',
-        todayValue: '45',
-        weeklyData: [30, 35, 50, 45, 40, 55, 48],
-      ),
-      StatisticsData(
-        label: 'Mileage',
-        icon: Icons.directions_run,
-        iconColor: const Color.fromARGB(255, 220, 81, 74),
-        unit: 'km',
-        todayValue: '5.5',
-        weeklyData: [3.2, 4.5, 5.0, 5.5, 4.8, 3.9, 5.2],
-      ),
-    ];
 
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 500),
       vsync: this,
     );
 
-    expandShrinkedAnim = _SizeDataTween(
-      begin: _SizeData(shrinkedBarWidth, shrinkedBarHeight), 
-      end: _SizeData(expandedBarWidth, expandedBarHeight)
-      ).animate(
-          CurvedAnimation(
-            parent: _animationController,
-            curve: defaultCurve,
-          ),
+    expandShrinkedAnim =
+        _SizeDataTween(
+          begin: _SizeData(shrinkedBarWidth, shrinkedBarHeight),
+          end: _SizeData(expandedBarWidth, expandedBarHeight),
+        ).animate(
+          CurvedAnimation(parent: _animationController, curve: defaultCurve),
         );
 
-    shrinkExpandedAnim = _SizeDataTween(
-      begin: _SizeData(expandedBarWidth, expandedBarHeight), 
-      end: _SizeData(shrinkedBarWidth, shrinkedBarHeight)
-    ).animate(
-          CurvedAnimation(
-            parent: _animationController,
-            curve: defaultCurve,
-          ),
+    shrinkExpandedAnim =
+        _SizeDataTween(
+          begin: _SizeData(expandedBarWidth, expandedBarHeight),
+          end: _SizeData(shrinkedBarWidth, shrinkedBarHeight),
+        ).animate(
+          CurvedAnimation(parent: _animationController, curve: defaultCurve),
         );
 
-    moveExpandingAnimFromLeft = _PositionDataTween(
-      begin: const _PositionData.fromLB(left: 0, bottom: shrinkedBarHeight, height: widgetHeight), 
-      end: const _PositionData.fromLT(left: 0, top: 0)
-    ).animate(
-          CurvedAnimation(
-            parent: _animationController,
-            curve: defaultCurve,
+    moveExpandingAnimFromLeft =
+        _PositionDataTween(
+          begin: const _PositionData.fromLB(
+            left: 0,
+            bottom: shrinkedBarHeight,
+            height: widgetHeight,
           ),
+          end: const _PositionData.fromLT(left: 0, top: 0),
+        ).animate(
+          CurvedAnimation(parent: _animationController, curve: defaultCurve),
         );
 
-    moveExpandingAnimFromRight = _PositionDataTween(
-      begin: const _PositionData.fromRB(right: shrinkedBarWidth, bottom: shrinkedBarHeight, width: widgetWidth, height: widgetHeight),
-      end: const _PositionData.fromLT(left: 0, top: 0)
-    ).animate(
-          CurvedAnimation(
-            parent: _animationController,
-            curve: defaultCurve,
+    moveExpandingAnimFromRight =
+        _PositionDataTween(
+          begin: const _PositionData.fromRB(
+            right: shrinkedBarWidth,
+            bottom: shrinkedBarHeight,
+            width: widgetWidth,
+            height: widgetHeight,
           ),
+          end: const _PositionData.fromLT(left: 0, top: 0),
+        ).animate(
+          CurvedAnimation(parent: _animationController, curve: defaultCurve),
         );
 
-    moveShrinkingAnimLeft = _PositionDataTween(
-      begin: const _PositionData.fromLT(left: 0, top: 0),
-      end: const _PositionData.fromLB(left: 0, bottom: shrinkedBarHeight, height: widgetHeight),
-    ).animate(
-          CurvedAnimation(
-            parent: _animationController,
-            curve: defaultCurve,
+    moveShrinkingAnimLeft =
+        _PositionDataTween(
+          begin: const _PositionData.fromLT(left: 0, top: 0),
+          end: const _PositionData.fromLB(
+            left: 0,
+            bottom: shrinkedBarHeight,
+            height: widgetHeight,
           ),
-        );
-    
-    moveShrinkingAnimRight = _PositionDataTween(
-      begin: const _PositionData.fromLT(left: 0, top: 0),
-      end: const _PositionData.fromRB(right: shrinkedBarWidth, bottom: shrinkedBarHeight, width: widgetWidth, height: widgetHeight),
-    ).animate(
-          CurvedAnimation(
-            parent: _animationController,
-            curve: defaultCurve,
-          ),
+        ).animate(
+          CurvedAnimation(parent: _animationController, curve: defaultCurve),
         );
 
-    moveShrinkedAnimLeft = _PositionDataTween(
-      begin: const _PositionData.fromRB(right: shrinkedBarWidth, bottom: shrinkedBarHeight, width: widgetWidth, height: widgetHeight),
-      end: const _PositionData.fromLB(left: 0, bottom: shrinkedBarHeight, height: widgetHeight),
-    ).animate(
-          CurvedAnimation(
-            parent: _animationController,
-            curve: defaultCurve,          
+    moveShrinkingAnimRight =
+        _PositionDataTween(
+          begin: const _PositionData.fromLT(left: 0, top: 0),
+          end: const _PositionData.fromRB(
+            right: shrinkedBarWidth,
+            bottom: shrinkedBarHeight,
+            width: widgetWidth,
+            height: widgetHeight,
           ),
+        ).animate(
+          CurvedAnimation(parent: _animationController, curve: defaultCurve),
         );
-  
-    moveShrinkedAnimRight = _PositionDataTween(
-      begin: const _PositionData.fromLB(left: 0, bottom: shrinkedBarHeight, height: widgetHeight),
-      end: const _PositionData.fromRB(right: shrinkedBarWidth, bottom: shrinkedBarHeight, width: widgetWidth, height: widgetHeight),
-    ).animate(
-          CurvedAnimation(
-            parent: _animationController,
-            curve: defaultCurve,          
+
+    moveShrinkedAnimLeft =
+        _PositionDataTween(
+          begin: const _PositionData.fromRB(
+            right: shrinkedBarWidth,
+            bottom: shrinkedBarHeight,
+            width: widgetWidth,
+            height: widgetHeight,
           ),
+          end: const _PositionData.fromLB(
+            left: 0,
+            bottom: shrinkedBarHeight,
+            height: widgetHeight,
+          ),
+        ).animate(
+          CurvedAnimation(parent: _animationController, curve: defaultCurve),
         );
+
+    moveShrinkedAnimRight =
+        _PositionDataTween(
+          begin: const _PositionData.fromLB(
+            left: 0,
+            bottom: shrinkedBarHeight,
+            height: widgetHeight,
+          ),
+          end: const _PositionData.fromRB(
+            right: shrinkedBarWidth,
+            bottom: shrinkedBarHeight,
+            width: widgetWidth,
+            height: widgetHeight,
+          ),
+        ).animate(
+          CurvedAnimation(parent: _animationController, curve: defaultCurve),
+        );
+    unchangedSize =
+        _SizeDataTween(
+          begin: const _SizeData(shrinkedBarWidth, shrinkedBarHeight),
+          end: const _SizeData(shrinkedBarWidth, shrinkedBarHeight),
+        ).animate(
+          CurvedAnimation(parent: _animationController, curve: defaultCurve),
+        );
+    setupAnimations(
+      expandingLabel: "b",
+      prevExpandedLabel: "a",
+      positionFrom: "left",
+    );
   }
 
   @override
@@ -246,40 +254,209 @@ class _StatisticsState extends State<StatisticsWidget>
     super.dispose();
   }
 
-  void _onStatisticTapped(String label) {
-    if (expandedOne == label) return; // Already expanded
+  late Animation<_SizeData> aSize;
+  late Animation<_PositionData> aMove;
 
-    setState(() {
-      expandedOne = label;
-    });
-    _animate();
+  late Animation<_SizeData> bSize;
+  late Animation<_PositionData> bMove;
+
+  late Animation<_SizeData> cSize;
+  late Animation<_PositionData> cMove;
+
+  void setupAnimations({
+    required String expandingLabel,
+    required String prevExpandedLabel,
+    required String positionFrom,
+  }) {
+    if (expandingLabel == 'a') {
+      aSize = expandShrinkedAnim;
+      aMove = positionFrom == 'left'
+          ? moveExpandingAnimFromLeft
+          : moveExpandingAnimFromRight;
+    } else if (expandingLabel == 'b') {
+      bSize = expandShrinkedAnim;
+      bMove = positionFrom == 'left'
+          ? moveExpandingAnimFromLeft
+          : moveExpandingAnimFromRight;
+    } else if (expandingLabel == 'c') {
+      cSize = expandShrinkedAnim;
+      cMove = positionFrom == 'left'
+          ? moveExpandingAnimFromLeft
+          : moveExpandingAnimFromRight;
+    }
+    switch (prevExpandedLabel) {
+      case 'a':
+        aSize = shrinkExpandedAnim;
+        aMove = positionFrom == 'left'
+            ? moveShrinkingAnimRight
+            : moveShrinkingAnimLeft;
+        break;
+      case 'b':
+        bSize = shrinkExpandedAnim;
+        bMove = positionFrom == 'left'
+            ? moveShrinkingAnimRight
+            : moveShrinkingAnimLeft;
+        break;
+      case 'c':
+        cSize = shrinkExpandedAnim;
+        cMove = positionFrom == 'left'
+            ? moveShrinkingAnimRight
+            : moveShrinkingAnimLeft;
+        break;
+    }
+
+    if (expandingLabel != 'a' && prevExpandedLabel != 'a') {
+      aSize = unchangedSize;
+      aMove = positionFrom == 'left'
+          ? moveShrinkedAnimLeft
+          : moveShrinkedAnimRight;
+    }
+    if (expandingLabel != 'b' && prevExpandedLabel != 'b') {
+      bSize = unchangedSize;
+      bMove = positionFrom == 'left'
+          ? moveShrinkedAnimLeft
+          : moveShrinkedAnimRight;
+    }
+    if (expandingLabel != 'c' && prevExpandedLabel != 'c') {
+      cSize = unchangedSize;
+      cMove = positionFrom == 'left'
+          ? moveShrinkedAnimLeft
+          : moveShrinkedAnimRight;
+    }
   }
 
-  void _animate(){
+  void expandShrinked(String label) {
+    firstBuild = false;
+    if (expandedOne == label) return; // Already expanded
+    final position = shrinkedLeft == label ? "left" : "right";
+    setupAnimations(
+      expandingLabel: label,
+      prevExpandedLabel: expandedOne,
+      positionFrom: position,
+    );
+    if (position == "left") {
+      shrinkedLeft = shrinkedRight;
+      shrinkedRight = expandedOne;
+    } else {
+      shrinkedRight = shrinkedLeft;
+      shrinkedLeft = expandedOne;
+    }
+    expandedOne = label;
+    setState(() {
+      _animate();
+    });
+  }
 
+  void _animate() {
     _animationController.forward(from: 0.0);
   }
 
+  static const List<StatisticsData> statisticsData = [
+    StatisticsData(
+      label: 'Steps',
+      icon: Icons.directions_walk,
+      iconColor: Color(0xFF6366F1),
+      unit: 'steps',
+      todayValue: '8,432',
+      weeklyData: [6200, 7500, 8200, 8432, 7100, 6800, 7900],
+    ),
+    StatisticsData(
+      label: 'Activity',
+      icon: Icons.access_time,
+      iconColor: Color.fromARGB(255, 106, 226, 97),
+      unit: 'min',
+      todayValue: '45',
+      weeklyData: [30, 35, 50, 45, 40, 55, 48],
+    ),
+    StatisticsData(
+      label: 'Mileage',
+      icon: Icons.directions_run,
+      iconColor: Color.fromARGB(255, 220, 81, 74),
+      unit: 'km',
+      todayValue: '5.5',
+      weeklyData: [3.2, 4.5, 5.0, 5.5, 4.8, 3.9, 5.2],
+    ),
+  ];
+
+  var firstBuild = true;
+
+  static const _PositionData bStartPosition = _PositionData.fromLB(
+    left: 0,
+    bottom: shrinkedBarHeight,
+    height: widgetHeight,
+  );
+
+  static const _PositionData cStartPosition = _PositionData.fromRB(
+    right: shrinkedBarWidth,
+    bottom: shrinkedBarHeight,
+    width: widgetWidth,
+    height: widgetHeight,
+  );
+
   @override
   Widget build(BuildContext context) {
-    // Find expanded and shrinked items
-    final expandedData = statisticsData.firstWhere(
-      (item) => item.label.toLowerCase() == expandedIndex,
-      orElse: () => statisticsData[0],
-    );
-    final shrinkedData = statisticsData
-        .where((item) => item.label.toLowerCase() != expandedIndex)
-        .toList();
-
-
-    return Container(,
-      child: Stack(
-        children: [
-          Positioned(
-            child: 
+    return AnimatedBuilder(
+      animation: _animationController,
+      builder: (_, _) {
+        return Container(
+          decoration: BoxDecoration(color: Colors.grey.withAlpha(150)),
+          width: widgetWidth,
+          height: widgetHeight,
+          child: Stack(
+            children: [
+              Positioned(
+                top: firstBuild ? 0 : aMove.value.fromTop,
+                left: firstBuild ? 0 : aMove.value.fromLeft,
+                width: firstBuild ? expandedBarWidth : aSize.value.width,
+                height: firstBuild ? expandedBarHeight : aSize.value.height,
+                child: GestureDetector(
+                  onTap: () => expandShrinked('a'),
+                  child: StatsItem(data: statisticsData[0]),
+                ),
+              ),
+              Positioned(
+                top: firstBuild ? bStartPosition.fromTop : bMove.value.fromTop,
+                left: firstBuild
+                    ? bStartPosition.fromLeft
+                    : bMove.value.fromLeft,
+                width: firstBuild ? shrinkedBarWidth : bSize.value.width,
+                height: firstBuild ? shrinkedBarHeight : bSize.value.height,
+                child: GestureDetector(
+                  onTap: () => expandShrinked('b'),
+                  child: StatsItem(data: statisticsData[1]),
+                ),
+              ),
+              Positioned(
+                top: firstBuild ? cStartPosition.fromTop : cMove.value.fromTop,
+                left: firstBuild
+                    ? cStartPosition.fromLeft
+                    : cMove.value.fromLeft,
+                width: firstBuild ? shrinkedBarWidth : cSize.value.width,
+                height: firstBuild ? shrinkedBarHeight : cSize.value.height,
+                child: GestureDetector(
+                  onTap: () => expandShrinked('c'),
+                  child: StatsItem(data: statisticsData[2]),
+                ),
+              ),
+              Center(
+                child: Container(
+                  alignment: Alignment.center,
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(color: Colors.transparent),
+                  child: Column(
+                    children: [
+                      Text("Expanded: $expandedOne"),
+                      Text("Shrinked Left: $shrinkedLeft"),
+                      Text("Shrinked Right: $shrinkedRight"),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
     // return Column(
     //   spacing: 12,
@@ -311,44 +488,62 @@ class _StatisticsState extends State<StatisticsWidget>
   }
 }
 
+class StatsItem extends StatelessWidget {
+  final StatisticsData data;
+
+  const StatsItem({super.key, required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: data.iconColor,
+        border: Border.all(
+          color: const Color.fromARGB(255, 0, 0, 0),
+          width: 1.5,
+        ),
+
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(children: [Text(data.label), Text(data.todayValue)]),
+    );
+  }
+}
+
 class ExpandableStatisticsItem extends StatelessWidget {
   final StatisticsData data;
   final bool isExpanded;
   final int shrinkedPosition; // 0 for left, 1 for right
-  final VoidCallback onTap;
   final AnimationController animationController;
 
   const ExpandableStatisticsItem({
     super.key,
     required this.data,
     required this.isExpanded,
-    required this.onTap,
+
     required this.shrinkedPosition,
     required this.animationController,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-        height: isExpanded ? 350 : 150,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withAlpha(100),
-              spreadRadius: 1,
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: isExpanded ? _buildExpandedView() : _buildCollapsedView(),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      height: isExpanded ? 350 : 150,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withAlpha(100),
+            spreadRadius: 1,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        borderRadius: BorderRadius.circular(12),
       ),
+      child: isExpanded ? _buildExpandedView() : _buildCollapsedView(),
     );
   }
 

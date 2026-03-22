@@ -8,7 +8,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      showPerformanceOverlay: true,
+      // showPerformanceOverlay: true,
       title: 'TrackOn',
       theme: ThemeData(
         useMaterial3: true,
