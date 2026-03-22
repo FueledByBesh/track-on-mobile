@@ -31,7 +31,7 @@ class HomePageBody extends StatelessWidget {
       ),
       child: Column(
         spacing: 20,
-        children: [const Statistics(), const SizedBox(height: 20)],
+        children: [const StatisticsWidget(), const SizedBox(height: 20)],
       ),
     );
   }
