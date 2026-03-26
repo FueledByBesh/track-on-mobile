@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:trackon_mobile/pages/user_profile_page.dart';
 
 class GroupsPage extends StatefulWidget {
   const GroupsPage({super.key});
@@ -113,43 +114,58 @@ class FeedTab extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Author Info
-              Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF6B5FFF).withAlpha(100),
-                      shape: BoxShape.circle,
+              GestureDetector(
+                onTap: () {
+                  final profile = getFallbackProfile(
+                    post.authorName,
+                    post.authorImage,
+                    const Color(0xFF6B5FFF),
+                  );
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => UserProfilePage(profile: profile),
                     ),
-                    child: Center(
-                      child: Text(
-                        post.authorImage,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                  );
+                },
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6B5FFF).withAlpha(100),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Text(
+                          post.authorImage,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          post.authorName,
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        Text(
-                          post.timestamp,
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodySmall?.copyWith(color: Colors.grey),
-                        ),
-                      ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            post.authorName,
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                          Text(
+                            post.timestamp,
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodySmall?.copyWith(color: Colors.grey),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Icon(Icons.more_vert, color: Colors.grey.shade400),
-                ],
+                    Icon(Icons.more_vert, color: Colors.grey.shade400),
+                  ],
+                ),
               ),
               const SizedBox(height: 12),
               // Content
@@ -457,9 +473,16 @@ class _FriendsTabState extends State<FriendsTab> {
         final friend = friends[index];
         return GestureDetector(
           onTap: () {
-            showModalBottomSheet(
-              context: context,
-              builder: (context) => FriendDetailSheet(friend: friend),
+            final profile = getFallbackProfile(
+              friend.name,
+              friend.initials,
+              friend.favoriteColor,
+            );
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => UserProfilePage(profile: profile),
+              ),
             );
           },
           child: Container(
@@ -549,185 +572,6 @@ class _FriendsTabState extends State<FriendsTab> {
           ),
         );
       },
-    );
-  }
-}
-
-class FriendDetailSheet extends StatelessWidget {
-  final Friend friend;
-
-  const FriendDetailSheet({super.key, required this.friend});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: friend.favoriteColor.withAlpha(100),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    friend.initials,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 28,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      friend.name,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: friend.favoriteColor.withAlpha(100),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        friend.status,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: friend.favoriteColor,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'This Week Activity',
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _ActivityCard(
-                  title: 'Runs',
-                  value: friend.weeklyRuns.toString(),
-                  icon: Icons.directions_run,
-                  color: Colors.orange,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _ActivityCard(
-                  title: 'Workouts',
-                  value: friend.weeklyWorkouts.toString(),
-                  icon: Icons.fitness_center,
-                  color: friend.favoriteColor,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text('Message'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: friend.favoriteColor,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text(
-                    'Add to Challenge',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ActivityCard extends StatelessWidget {
-  final String title;
-  final String value;
-  final IconData icon;
-  final Color color;
-
-  const _ActivityCard({
-    required this.title,
-    required this.value,
-    required this.icon,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: color,
-            ),
-          ),
-          Text(
-            title,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: Colors.grey),
-          ),
-        ],
-      ),
     );
   }
 }

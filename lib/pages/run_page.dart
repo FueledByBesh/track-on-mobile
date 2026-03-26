@@ -1,5 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:trackon_mobile/data/location_service.dart';
 
 class RunPage extends StatefulWidget {
   const RunPage({super.key});
@@ -13,6 +18,78 @@ class _RunPageState extends State<RunPage> {
   int seconds = 0;
   double distance = 0.0;
 
+  final LocationService _locationService = LocationService();
+  final MapController _mapController = MapController();
+
+  LatLng? _currentPosition;
+  bool _loadingLocation = true;
+  String? _locationError;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _initLocation();
+  }
+
+  Future<void> _initLocation() async {
+    final position = await _locationService.getCurrentPosition();
+    if (position != null) {
+      setState(() {
+        _currentPosition = LatLng(position.latitude, position.longitude);
+        _loadingLocation = false;
+      });
+    } else {
+      setState(() {
+        _locationError = 'Could not get location. Check permissions.';
+        _loadingLocation = false;
+      });
+    }
+  }
+
+  void _startRun() {
+    setState(() {
+      isRunning = true;
+      seconds = 0;
+      distance = 0.0;
+    });
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      setState(() => seconds++);
+    });
+
+    _locationService.startTracking(
+      onPosition: (Position pos) {
+        final newPos = LatLng(pos.latitude, pos.longitude);
+        if (_currentPosition != null) {
+          final d = _locationService.distanceBetween(
+            _currentPosition!.latitude,
+            _currentPosition!.longitude,
+            newPos.latitude,
+            newPos.longitude,
+          );
+          setState(() => distance += d / 1000); // meters to km
+        }
+        setState(() => _currentPosition = newPos);
+        _mapController.move(newPos, _mapController.camera.zoom);
+      },
+      distanceFilter: 5,
+    );
+  }
+
+  void _stopRun() {
+    _timer?.cancel();
+    _locationService.stopTracking();
+    setState(() => isRunning = false);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _locationService.stopTracking();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final minutes = seconds ~/ 60;
@@ -24,36 +101,8 @@ class _RunPageState extends State<RunPage> {
           Expanded(
             child: Stack(
               children: [
-                // Map Placeholder
-                Container(
-                  color: Colors.grey.shade300,
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.location_on,
-                          color: const Color(0xFF6B5FFF),
-                          size: 80,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Map View',
-                          style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Current Location: '
-                          '${37.7749}°N, ${-122.4194}°W',
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                // Map
+                _buildMap(),
                 // Top Info Bar
                 Positioned(
                   top: 16,
@@ -145,13 +194,11 @@ class _RunPageState extends State<RunPage> {
                     ),
                     GestureDetector(
                       onTap: () {
-                        setState(() {
-                          isRunning = !isRunning;
-                          if (!isRunning) {
-                            seconds = 0;
-                            distance = 0;
-                          }
-                        });
+                        if (isRunning) {
+                          _stopRun();
+                        } else {
+                          _startRun();
+                        }
                       },
                       child: Container(
                         width: 80,
@@ -183,7 +230,14 @@ class _RunPageState extends State<RunPage> {
                       ),
                     ),
                     GestureDetector(
-                      onTap: () {},
+                      onTap: () {
+                        if (_currentPosition != null) {
+                          _mapController.move(
+                            _currentPosition!,
+                            16.0,
+                          );
+                        }
+                      },
                       child: Container(
                         width: 50,
                         height: 50,
@@ -192,7 +246,7 @@ class _RunPageState extends State<RunPage> {
                           border: Border.all(color: Colors.grey.shade300),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.settings),
+                        child: const Icon(Icons.my_location),
                       ),
                     ),
                   ],
@@ -203,6 +257,10 @@ class _RunPageState extends State<RunPage> {
                   height: 50,
                   child: ElevatedButton(
                     onPressed: () {
+                      if (!isRunning) {
+                        _startRun();
+                        return;
+                      }
                       showDialog(
                         context: context,
                         builder: (context) => AlertDialog(
@@ -227,9 +285,7 @@ class _RunPageState extends State<RunPage> {
                             ElevatedButton(
                               onPressed: () {
                                 Navigator.pop(context);
-                                setState(() {
-                                  isRunning = false;
-                                });
+                                _stopRun();
                               },
                               child: const Text('Finish'),
                             ),
@@ -240,7 +296,7 @@ class _RunPageState extends State<RunPage> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: isRunning
                           ? Colors.red.shade600
-                          : Colors.grey.shade400,
+                          : const Color(0xFF6B5FFF),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -260,6 +316,90 @@ class _RunPageState extends State<RunPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMap() {
+    if (_loadingLocation) {
+      return const Center(
+        child: CircularProgressIndicator(color: Color(0xFF6B5FFF)),
+      );
+    }
+
+    if (_locationError != null || _currentPosition == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.location_off, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text(
+              _locationError ?? 'Location unavailable',
+              style: const TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _loadingLocation = true;
+                  _locationError = null;
+                });
+                _initLocation();
+              },
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return FlutterMap(
+      mapController: _mapController,
+      options: MapOptions(
+        initialCenter: _currentPosition!,
+        initialZoom: 16.0,
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
+          subdomains: const ['a', 'b', 'c', 'd'],
+          userAgentPackageName: 'com.trackon.mobile',
+          maxZoom: 20,
+        ),
+        MarkerLayer(
+          markers: [
+            Marker(
+              point: _currentPosition!,
+              width: 40,
+              height: 40,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6B5FFF).withAlpha(50),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6B5FFF),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 3),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF6B5FFF).withAlpha(100),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

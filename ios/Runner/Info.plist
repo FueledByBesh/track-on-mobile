@@ -47,6 +47,10 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>TrackOn needs your location to show your position on the map and track your runs.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>TrackOn needs your location to track your runs in the background.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
