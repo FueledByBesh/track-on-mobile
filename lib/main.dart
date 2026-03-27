@@ -1,13 +1,17 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
+<<<<<<< HEAD
 import 'pages/home_page.dart';
 import 'pages/run_page.dart';
 import 'pages/fitness_page.dart';
 import 'pages/groups_page.dart';
+=======
+import 'ui/myapp.dart';
+>>>>>>> feature-homepage
 
 void main() {
   runApp(const MyApp());
 }
+<<<<<<< HEAD
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -105,3 +109,5 @@ class _MainNavigationState extends State<MainNavigation> {
     );
   }
 }
+=======
+>>>>>>> feature-homepage
