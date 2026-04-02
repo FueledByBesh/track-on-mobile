@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:trackon_mobile/pages/user_profile_page.dart';
+import 'package:trackon_mobile/ui/sharedwidgets/user_profile_page.dart';
 
 class GroupsPage extends StatefulWidget {
   const GroupsPage({super.key});

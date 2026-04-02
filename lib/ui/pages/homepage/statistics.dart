@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'dart:math' as math;
 
 enum StatsItemType {
@@ -428,6 +429,7 @@ class _StatisticsContainer extends State<StatisticsContainer>
                   onTap: () => expandShrinked('a'),
                   child: StatsItem(
                     data: _preparedData[0],
+                    weeklyData: _statsData[0].weeklyData,
                     isExpanded: expanded == 'a',
                   ),
                 ),
@@ -441,6 +443,7 @@ class _StatisticsContainer extends State<StatisticsContainer>
                   onTap: () => expandShrinked('b'),
                   child: StatsItem(
                     data: _preparedData[1],
+                    weeklyData: _statsData[1].weeklyData,
                     isExpanded: expanded == 'b',
                   ),
                 ),
@@ -454,6 +457,7 @@ class _StatisticsContainer extends State<StatisticsContainer>
                   onTap: () => expandShrinked('c'),
                   child: StatsItem(
                     data: _preparedData[2],
+                    weeklyData: _statsData[2].weeklyData,
                     isExpanded: expanded == 'c',
                   ),
                 ),
@@ -468,20 +472,30 @@ class _StatisticsContainer extends State<StatisticsContainer>
 
 class StatsItem extends StatelessWidget {
   final PreparedItemData data;
+  final List<double> weeklyData;
   final bool isExpanded;
 
-  const StatsItem({super.key, required this.data, required this.isExpanded});
+  const StatsItem({
+    super.key,
+    required this.data,
+    required this.weeklyData,
+    required this.isExpanded,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        border: Border.all(
-          color: const Color.fromARGB(255, 0, 0, 0),
-          width: 1.5,
-        ),
-
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(15),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: isExpanded
           ? _buildExpandedView(context)
@@ -490,229 +504,140 @@ class StatsItem extends StatelessWidget {
   }
 
   Widget _buildExpandedView(BuildContext context) {
-    return Column(children: [Text("Not Implemented")]);
-  }
+    final color = Theme.of(context).colorScheme.primary;
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final spots = List.generate(
+      weeklyData.length,
+      (i) => FlSpot(i.toDouble(), weeklyData[i]),
+    );
 
-  Widget _buildCollapsedView(BuildContext context) {
-    Color color = Theme.of(context).colorScheme.primary;
     return Padding(
-      padding: EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(4),
-            child: Icon(data.type.icon, color: color, size: 28),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: color.withAlpha(25),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(data.type.icon, color: color, size: 22),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    data.type.label,
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+                  ),
+                  Text(
+                    data.collapsedDisplayValue,
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          Text(
-            data.collapsedDisplayValue,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w400,
-              color: const Color.fromARGB(255, 0, 0, 0),
-            ),
-          ),
-          Text(
-            data.type.label,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Color.fromARGB(255, 83, 83, 83),
+          const SizedBox(height: 16),
+          Expanded(
+            child: LineChart(
+              LineChartData(
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: null,
+                  getDrawingHorizontalLine: (value) =>
+                      FlLine(color: Colors.grey.withAlpha(30), strokeWidth: 1),
+                ),
+                titlesData: FlTitlesData(
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: 1,
+                      reservedSize: 19,
+                      getTitlesWidget: (value, meta) {
+                        final i = value.toInt();
+                        if (i != value || i < 0 || i >= days.length) {
+                          return const SizedBox.shrink();
+                        }
+                        return SideTitleWidget(
+                          axisSide: meta.axisSide,
+                          fitInside: SideTitleFitInsideData.fromTitleMeta(meta),
+                          child: Text(
+                            days[i],
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  leftTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                ),
+                borderData: FlBorderData(show: false),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: spots,
+                    isCurved: true,
+                    color: color,
+                    barWidth: 3,
+                    dotData: FlDotData(show: true),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      color: color.withAlpha(30),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
       ),
     );
   }
+
+  Widget _buildCollapsedView(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: color.withAlpha(25),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(data.type.icon, color: color, size: 22),
+          ),
+          const Spacer(),
+          Text(
+            data.collapsedDisplayValue,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            data.type.label,
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          ),
+        ],
+      ),
+    );
+  }
 }
-
-// class ExpandableStatisticsItem extends StatelessWidget {
-//   final StatisticsData data;
-//   final PreparedItemData prepared;
-//   final bool isExpanded;
-
-//   const ExpandableStatisticsItem({
-//     super.key,
-//     required this.data,
-//     required this.prepared,
-//     required this.isExpanded,
-//   });
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return Container(
-//       decoration: BoxDecoration(
-//         color: Colors.white,
-//         boxShadow: [
-//           BoxShadow(
-//             color: Colors.grey.withAlpha(100),
-//             spreadRadius: 1,
-//             blurRadius: 4,
-//             offset: const Offset(0, 2),
-//           ),
-//         ],
-//         borderRadius: BorderRadius.circular(12),
-//       ),
-//       child: isExpanded ? _buildExpandedView() : _buildCollapsedView(),
-//     );
-//   }
-
-//   Widget _buildCollapsedView() {
-//     return Padding(
-//       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-//       child: Column(
-//         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-//         children: [
-//           Row(
-//             children: [
-//               Container(
-//                 padding: const EdgeInsets.all(8),
-//                 decoration: BoxDecoration(
-//                   color: data.iconColor.withAlpha(30),
-//                   borderRadius: BorderRadius.circular(8),
-//                 ),
-//                 child: Icon(data.icon, color: data.iconColor, size: 24),
-//               ),
-//               const SizedBox(width: 12),
-//               Expanded(
-//                 child: Column(
-//                   crossAxisAlignment: CrossAxisAlignment.start,
-//                   children: [
-//                     Text(
-//                       data.label,
-//                       style: const TextStyle(
-//                         fontSize: 14,
-//                         fontWeight: FontWeight.w600,
-//                         color: Color(0xFF1C2A3A),
-//                       ),
-//                     ),
-//                     Text(
-//                       '${prepared.displayValue} ${data.unit}',
-//                       style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//             ],
-//           ),
-//           Column(
-//             crossAxisAlignment: CrossAxisAlignment.start,
-//             children: [
-//               ClipRRect(
-//                 borderRadius: BorderRadius.circular(4),
-//                 child: LinearProgressIndicator(
-//                   value: prepared.progressPercent,
-//                   minHeight: 6,
-//                   backgroundColor: Colors.grey[200],
-//                   valueColor: AlwaysStoppedAnimation<Color>(data.iconColor),
-//                 ),
-//               ),
-//               const SizedBox(height: 4),
-//               Text(
-//                 prepared.progressText,
-//                 style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-//               ),
-//             ],
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-
-//   Widget _buildExpandedView() {
-//     return Padding(
-//       padding: const EdgeInsets.all(12),
-//       child: Column(
-//         crossAxisAlignment: CrossAxisAlignment.start,
-//         children: [
-//           Row(
-//             children: [
-//               Container(
-//                 padding: const EdgeInsets.all(8),
-//                 decoration: BoxDecoration(
-//                   color: data.iconColor.withAlpha(30),
-//                   borderRadius: BorderRadius.circular(8),
-//                 ),
-//                 child: Icon(data.icon, color: data.iconColor, size: 24),
-//               ),
-//               const SizedBox(width: 12),
-//               Expanded(
-//                 child: Column(
-//                   crossAxisAlignment: CrossAxisAlignment.start,
-//                   children: [
-//                     Text(
-//                       data.label,
-//                       style: const TextStyle(
-//                         fontSize: 16,
-//                         fontWeight: FontWeight.bold,
-//                         color: Color(0xFF1C2A3A),
-//                       ),
-//                     ),
-//                     RichText(
-//                       text: TextSpan(
-//                         children: [
-//                           TextSpan(
-//                             text: data.todayValue,
-//                             style: TextStyle(
-//                               fontSize: 18,
-//                               fontWeight: FontWeight.bold,
-//                               color: data.iconColor,
-//                             ),
-//                           ),
-//                           TextSpan(
-//                             text: ' ${data.unit}',
-//                             style: TextStyle(
-//                               fontSize: 12,
-//                               color: Colors.grey[600],
-//                             ),
-//                           ),
-//                         ],
-//                       ),
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//               Padding(
-//                 padding: const EdgeInsets.all(8),
-//                 child: Icon(
-//                   Icons.open_in_new,
-//                   color: Colors.grey[500],
-//                   size: 24,
-//                 ),
-//               ),
-//             ],
-//           ),
-//           const SizedBox(height: 12),
-//           Text(
-//             'Weekly Overview',
-//             style: TextStyle(
-//               fontSize: 14,
-//               fontWeight: FontWeight.w600,
-//               color: Colors.grey[700],
-//             ),
-//           ),
-//           const SizedBox(height: 8),
-//           Row(
-//             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-//             children: [
-//               Flexible(
-//                 child: Text(
-//                   'Avg: ${prepared.avgText}',
-//                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-//                   overflow: TextOverflow.ellipsis,
-//                 ),
-//               ),
-//               const SizedBox(width: 8),
-//               Flexible(
-//                 child: Text(
-//                   'Max: ${prepared.maxText}',
-//                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-//                   overflow: TextOverflow.ellipsis,
-//                 ),
-//               ),
-//             ],
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-// }

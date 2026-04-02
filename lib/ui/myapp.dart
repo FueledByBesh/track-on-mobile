@@ -1,6 +1,9 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:trackon_mobile/ui/pages/homepage/core.dart';
+import 'package:trackon_mobile/ui/pages/fitnesspage/core.dart';
+import 'package:trackon_mobile/ui/pages/groupspage/core.dart';
+import 'package:trackon_mobile/ui/pages/runpage/core.dart';
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -8,17 +11,14 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      showPerformanceOverlay: false,
       title: 'TrackOn',
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          // seedColor: const Color(0xFF3A4A5C),
-          seedColor: const Color.fromARGB(255, 17, 0, 255),
+          seedColor: const Color(0xFF6B5FFF),
           brightness: Brightness.light,
         ),
-        // scaffoldBackgroundColor: const Color(0xFFFAFBFC),
-        scaffoldBackgroundColor: const Color.fromARGB(255, 246, 247, 255),
+        scaffoldBackgroundColor: const Color(0xFFFAFBFC),
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFFFAFBFC),
           elevation: 0,
@@ -43,69 +43,57 @@ class MainNavigation extends StatefulWidget {
 }
 
 class _MainNavigationState extends State<MainNavigation> {
-  int _selectedIndex = 0;
+  int _currentIndex = 0;
 
   final List<Widget> _pages = [
     const HomePage(),
-    const Center(child: Text('Run Page')),
-    const Center(child: Text('Fitness Page')),
-    const Center(child: Text('Groups Page')),
+    const RunPage(),
+    const FitnessPage(),
+    const GroupsPage(),
   ];
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
-      body: _pages[_selectedIndex],
+      body: _pages[_currentIndex],
       bottomNavigationBar: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white.withAlpha(220),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(20),
+              color: Colors.white.withAlpha(180),
+              border: Border(
+                top: BorderSide(color: Colors.grey.shade200, width: 0.5),
               ),
             ),
             child: BottomNavigationBar(
-              items: const <BottomNavigationBarItem>[
+              currentIndex: _currentIndex,
+              onTap: (index) {
+                setState(() {
+                  _currentIndex = index;
+                });
+              },
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              selectedItemColor: const Color(0xFF6B5FFF),
+              unselectedItemColor: Colors.grey,
+              items: const [
+                BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
                 BottomNavigationBarItem(
-                  icon: Icon(Icons.home_outlined),
-                  activeIcon: Icon(Icons.home),
-                  label: 'Home',
-                  tooltip: "Hello World",
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.directions_run_outlined),
-                  activeIcon: Icon(Icons.directions_run),
+                  icon: Icon(Icons.directions_run),
                   label: 'Run',
                 ),
                 BottomNavigationBarItem(
-                  icon: Icon(Icons.fitness_center_outlined),
-                  activeIcon: Icon(Icons.fitness_center),
+                  icon: Icon(Icons.fitness_center),
                   label: 'Fitness',
                 ),
                 BottomNavigationBarItem(
-                  icon: Icon(Icons.group_outlined),
-                  activeIcon: Icon(Icons.group),
+                  icon: Icon(Icons.group),
                   label: 'Groups',
                 ),
               ],
-              currentIndex: _selectedIndex,
-              onTap: _onItemTapped,
-              type: BottomNavigationBarType.fixed,
-              backgroundColor: Colors.transparent,
-              selectedItemColor: Theme.of(context).colorScheme.primary,
-              unselectedItemColor: const Color(0xFF8B95A5),
-              // unselectedItemColor: Theme.of(context).colorScheme.,
-              elevation: 0,
             ),
           ),
         ),

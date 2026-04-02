@@ -1,9 +1,5 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:trackon_mobile/pages/notifications_page.dart';
-import 'package:trackon_mobile/pages/profile_page.dart';
-import 'package:trackon_mobile/pages/settings_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -13,7 +9,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  bool _hasNewNotifications = true;
+  // bool _hasNewNotifications = true;
 
   @override
   Widget build(BuildContext context) {
@@ -199,91 +195,6 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
-        // Blurred App Bar
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-              child: Container(
-                color: Colors.white.withAlpha(100),
-                padding: EdgeInsets.only(
-                  top: topPadding + 8,
-                  left: 12,
-                  right: 12,
-                  bottom: 8,
-                ),
-                child: Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const ProfilePage()),
-                        );
-                      },
-                      child: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(0xFF6B5FFF).withAlpha(80),
-                        ),
-                        child: const Icon(
-                          Icons.person,
-                          size: 22,
-                          color: Color(0xFF6B5FFF),
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    Stack(
-                      children: [
-                        IconButton(
-                          onPressed: () {
-                            setState(() => _hasNewNotifications = false);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const NotificationsPage()),
-                            );
-                          },
-                          icon: const Icon(Icons.notifications_outlined),
-                          color: Colors.grey.shade700,
-                        ),
-                        if (_hasNewNotifications)
-                          Positioned(
-                            right: 8,
-                            top: 8,
-                            child: Container(
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                color: Colors.red,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 1.5),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    IconButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const SettingsPage()),
-                        );
-                      },
-                      icon: const Icon(Icons.settings_outlined),
-                      color: Colors.grey.shade700,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -425,4 +336,3 @@ class _WorkoutCard extends StatelessWidget {
     );
   }
 }
-
