@@ -1,12 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'statistics.dart';
 import 'dart:ui';
+import 'package:trackon_mobile/data/providers/steps_provider.dart';
+import 'package:trackon_mobile/data/providers/fitness_provider.dart';
+import 'package:trackon_mobile/data/providers/notification_provider.dart';
+import 'package:trackon_mobile/data/models/workout.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/notifications_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/profile_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/settings_page.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<StepsProvider>().loadToday();
+      context.read<FitnessProvider>().loadPlannedWorkouts();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,11 +40,13 @@ class HomePage extends StatelessWidget {
 
 class HomePageBody extends StatelessWidget {
   const HomePageBody({super.key});
-  static const double height = 200;
   static const double horizontalPadding = 16;
 
   @override
   Widget build(BuildContext context) {
+    final fitnessProvider = context.watch<FitnessProvider>();
+    final plannedWorkouts = fitnessProvider.plannedWorkouts;
+
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
         horizontalPadding,
@@ -50,7 +71,7 @@ class HomePageBody extends StatelessWidget {
                         ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                   Text(
-                    '3 workouts',
+                    '${plannedWorkouts.length} workouts',
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
@@ -59,29 +80,31 @@ class HomePageBody extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              _WorkoutCard(
-                title: 'Morning Run',
-                duration: '30 min',
-                intensity: 'High',
-                color: Colors.orange,
-                completed: false,
-              ),
-              const SizedBox(height: 10),
-              _WorkoutCard(
-                title: 'Chest & Triceps',
-                duration: '45 min',
-                intensity: 'Medium',
-                color: const Color(0xFF6B5FFF),
-                completed: true,
-              ),
-              const SizedBox(height: 10),
-              _WorkoutCard(
-                title: 'Evening Yoga',
-                duration: '20 min',
-                intensity: 'Low',
-                color: Colors.green,
-                completed: false,
-              ),
+              if (plannedWorkouts.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(Icons.event_available, size: 40, color: Colors.grey.shade300),
+                      const SizedBox(height: 8),
+                      Text(
+                        'No workouts planned for today',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ...plannedWorkouts.map((pw) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _WorkoutCard(plannedWorkout: pw),
+                )),
             ],
           ),
           const SizedBox(height: 20),
@@ -91,7 +114,7 @@ class HomePageBody extends StatelessWidget {
   }
 }
 
-class CustomAppBar extends StatefulWidget implements PreferredSizeWidget {
+class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   const CustomAppBar({super.key});
   static const double appBarHeight = 60;
 
@@ -99,21 +122,16 @@ class CustomAppBar extends StatefulWidget implements PreferredSizeWidget {
   Size get preferredSize => const Size.fromHeight(appBarHeight);
 
   @override
-  State<CustomAppBar> createState() => _CustomAppBarState();
-}
-
-class _CustomAppBarState extends State<CustomAppBar> {
-  bool _hasNewNotifications = true;
-
-  @override
   Widget build(BuildContext context) {
+    final unreadCount = context.watch<NotificationProvider>().unreadCount;
+
     return SafeArea(
       child: ClipRect(
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
             color: Colors.white.withAlpha(100),
-            padding: EdgeInsets.only(top: 8, left: 12, right: 12, bottom: 8),
+            padding: const EdgeInsets.only(top: 8, left: 12, right: 12, bottom: 8),
             child: Row(
               children: [
                 GestureDetector(
@@ -142,7 +160,6 @@ class _CustomAppBarState extends State<CustomAppBar> {
                   children: [
                     IconButton(
                       onPressed: () {
-                        setState(() => _hasNewNotifications = false);
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -153,7 +170,7 @@ class _CustomAppBarState extends State<CustomAppBar> {
                       icon: const Icon(Icons.notifications_outlined),
                       color: Colors.grey.shade700,
                     ),
-                    if (_hasNewNotifications)
+                    if (unreadCount > 0)
                       Positioned(
                         right: 8,
                         top: 8,
@@ -186,165 +203,110 @@ class _CustomAppBarState extends State<CustomAppBar> {
       ),
     );
   }
-
-  // @override
-  // Widget build(BuildContext context) {
-  //   return SafeArea(
-  //     child: Container(
-  //       padding: const EdgeInsets.symmetric(horizontal: 16),
-  //       height: appBarHeight,
-  //       decoration: BoxDecoration(color: Colors.transparent),
-  //       child: Row(
-  //         crossAxisAlignment: CrossAxisAlignment.center,
-  //         children: [
-  //           Profile(),
-  //           const Spacer(),
-  //           const Text(
-  //             'TrackOn',
-  //             style: TextStyle(
-  //               color: Color(0xFF1C2A3A),
-  //               fontSize: 20,
-  //               fontWeight: FontWeight.bold,
-  //             ),
-  //           ),
-  //           const Spacer(),
-  //           const Icon(Icons.notifications_none, size: 28),
-  //         ],
-  //       ),
-  //     ),
-  //   );
-  // }
 }
 
 class _WorkoutCard extends StatelessWidget {
-  final String title;
-  final String duration;
-  final String intensity;
-  final Color color;
-  final bool completed;
+  final PlannedWorkout plannedWorkout;
 
-  const _WorkoutCard({
-    required this.title,
-    required this.duration,
-    required this.intensity,
-    required this.color,
-    required this.completed,
-  });
+  const _WorkoutCard({required this.plannedWorkout});
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: color.withAlpha(100),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(child: Icon(Icons.fitness_center, color: color)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w600),
-                ),
-                Row(
-                  children: [
-                    Text(
-                      duration,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Colors.grey),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      intensity,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: color,
-                            fontWeight: FontWeight.w500,
-                          ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          if (completed)
-            Container(
-              width: 24,
-              height: 24,
-              decoration: const BoxDecoration(
-                color: Color(0xFF6B5FFF),
-                shape: BoxShape.circle,
-              ),
-              child: const Center(
-                child: Icon(Icons.check, color: Colors.white, size: 16),
-              ),
-            )
-          else
-            Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                shape: BoxShape.circle,
-              ),
-            ),
-        ],
-      ),
-    );
+  Color get _typeColor {
+    switch (plannedWorkout.workoutType) {
+      case 'CHEST': return Colors.blue;
+      case 'LEGS': return Colors.orange;
+      case 'BACK': return Colors.purple;
+      case 'SHOULDERS': return Colors.teal;
+      case 'ARMS': return Colors.red;
+      case 'CORE': return Colors.green;
+      case 'CARDIO': return Colors.deepOrange;
+      case 'FULL_BODY': return const Color(0xFF6B5FFF);
+      default: return const Color(0xFF6B5FFF);
+    }
   }
-}
-
-class Profile extends StatefulWidget {
-  const Profile({super.key});
-
-  @override
-  State<Profile> createState() => _ProfileState();
-}
-
-class _ProfileState extends State<Profile> {
-  var imageUrl = 'https://avatars.githubusercontent.com/u/12345678?v=4';
-  var notificationCount = 0;
-
-  // Future<String> fetchProfileImage() async {
-  //   // Simulate network delay
-  //   await Future.delayed(const Duration(seconds: 2));
-  //   // Return a new image URL (you can replace this with an actual API call)
-  //   return 'https://avatars.githubusercontent.com/u/87654321?v=4';
-  // }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.transparent,
-        border: Border.all(color: Colors.black, width: 3),
-        borderRadius: BorderRadius.circular(25),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(25),
-        child: Image.network(
-          imageUrl,
-          width: 40,
-          height: 40,
-          fit: BoxFit.cover,
+    return GestureDetector(
+      onTap: () {
+        context.read<FitnessProvider>().toggleWorkoutCompleted(
+          plannedWorkout.id,
+          !plannedWorkout.completed,
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: _typeColor.withAlpha(100),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(child: Icon(Icons.fitness_center, color: _typeColor)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    plannedWorkout.workoutName,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  Row(
+                    children: [
+                      Text(
+                        '${plannedWorkout.sets} sets x ${plannedWorkout.reps} reps',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: Colors.grey),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        plannedWorkout.workoutType,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: _typeColor,
+                              fontWeight: FontWeight.w500,
+                            ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (plannedWorkout.completed)
+              Container(
+                width: 24,
+                height: 24,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF6B5FFF),
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: Icon(Icons.check, color: Colors.white, size: 16),
+                ),
+              )
+            else
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  shape: BoxShape.circle,
+                ),
+              ),
+          ],
         ),
       ),
     );

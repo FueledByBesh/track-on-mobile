@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:trackon_mobile/data/providers/auth_provider.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -126,6 +128,18 @@ class _GeneralTabState extends State<_GeneralTab> {
           title: 'Delete Account',
           subtitle: 'Permanently remove your account',
           onTap: () {},
+          isDestructive: true,
+        ),
+        const SizedBox(height: 24),
+        _SectionHeader(title: 'Session'),
+        _SettingsTile(
+          icon: Icons.logout,
+          title: 'Sign Out',
+          subtitle: 'Sign out of your account',
+          onTap: () {
+            context.read<AuthProvider>().signOut();
+            Navigator.of(context).popUntil((route) => route.isFirst);
+          },
           isDestructive: true,
         ),
       ],

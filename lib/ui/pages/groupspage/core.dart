@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:trackon_mobile/ui/sharedwidgets/user_profile_page.dart';
+import 'package:provider/provider.dart';
+import 'package:trackon_mobile/data/providers/groups_provider.dart';
+import 'package:trackon_mobile/data/models/post.dart' as post_model;
 
 class GroupsPage extends StatefulWidget {
   const GroupsPage({super.key});
@@ -16,6 +18,13 @@ class _GroupsPageState extends State<GroupsPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<GroupsProvider>();
+      provider.loadFeed();
+      provider.loadMyClubs();
+      provider.loadFriends();
+      provider.loadIncomingRequests();
+    });
   }
 
   @override
@@ -33,9 +42,10 @@ class _GroupsPageState extends State<GroupsPage>
             padding: const EdgeInsets.all(16.0),
             child: Text(
               'Groups',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
           TabBar(
@@ -61,176 +71,132 @@ class _GroupsPageState extends State<GroupsPage>
   }
 }
 
+// ============ FEED TAB ============
+
 class FeedTab extends StatelessWidget {
   const FeedTab({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final List<Post> posts = [
-      Post(
-        authorName: 'Alex Johnson',
-        authorImage: 'AJ',
-        timestamp: '2 hours ago',
-        content: 'Just completed a 10k run! Personal best time! 🏃',
-        likes: 234,
-        comments: 45,
-        imageUrl: null,
-      ),
-      Post(
-        authorName: 'Fitness Club',
-        authorImage: 'FC',
-        timestamp: '4 hours ago',
-        content:
-            'New strength training challenge: 30 days of pushups! Who\'s in? 💪',
-        likes: 567,
-        comments: 89,
-        imageUrl: null,
-      ),
-      Post(
-        authorName: 'Sarah Williams',
-        authorImage: 'SW',
-        timestamp: '6 hours ago',
-        content: 'Yoga session this morning was amazing. Feeling energized!',
-        likes: 156,
-        comments: 23,
-        imageUrl: null,
-      ),
-    ];
+    final provider = context.watch<GroupsProvider>();
+    final feed = provider.feed;
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: posts.length,
-      itemBuilder: (context, index) {
-        final post = posts[index];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Author Info
-              GestureDetector(
-                onTap: () {
-                  final profile = getFallbackProfile(
-                    post.authorName,
-                    post.authorImage,
-                    const Color(0xFF6B5FFF),
-                  );
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => UserProfilePage(profile: profile),
-                    ),
-                  );
-                },
-                child: Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF6B5FFF).withAlpha(100),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          post.authorImage,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            post.authorName,
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w600),
-                          ),
-                          Text(
-                            post.timestamp,
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodySmall?.copyWith(color: Colors.grey),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(Icons.more_vert, color: Colors.grey.shade400),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Content
-              Text(post.content, style: Theme.of(context).textTheme.bodyMedium),
-              const SizedBox(height: 12),
-              // Actions
-              Row(
-                children: [
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.favorite_outline,
-                          size: 20,
-                          color: Colors.grey.shade600,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          post.likes.toString(),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.mode_comment_outlined,
-                          size: 20,
-                          color: Colors.grey.shade600,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          post.comments.toString(),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.share_outlined,
-                          size: 20,
-                          color: Colors.grey.shade600,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Share',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
+    if (provider.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (feed.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.dynamic_feed, size: 48, color: Colors.grey.shade300),
+            const SizedBox(height: 12),
+            Text('No posts yet', style: TextStyle(color: Colors.grey.shade500)),
+            const SizedBox(height: 8),
+            Text('Follow clubs and add friends to see posts', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => provider.loadFeed(),
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: feed.length,
+        itemBuilder: (context, index) => _PostCard(post: feed[index]),
+      ),
     );
   }
 }
+
+class _PostCard extends StatelessWidget {
+  final post_model.Post post;
+  const _PostCard({required this.post});
+
+  @override
+  Widget build(BuildContext context) {
+    final initials = post.authorName.isNotEmpty
+        ? post.authorName.split(' ').map((e) => e.isNotEmpty ? e[0] : '').take(2).join()
+        : '?';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(color: const Color(0xFF6B5FFF).withAlpha(100), shape: BoxShape.circle),
+                child: Center(child: Text(initials, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14))),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(post.authorName, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                    if (post.clubName != null)
+                      Text(post.clubName!, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF6B5FFF))),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(post.content, style: Theme.of(context).textTheme.bodyMedium),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () => context.read<GroupsProvider>().likePost(post.id, true),
+                child: Row(children: [
+                  Icon(
+                    post.userLiked == true ? Icons.favorite : Icons.favorite_outline,
+                    size: 20,
+                    color: post.userLiked == true ? Colors.red : Colors.grey.shade600,
+                  ),
+                  const SizedBox(width: 4),
+                  Text('${post.likes}', style: Theme.of(context).textTheme.bodySmall),
+                ]),
+              ),
+              const SizedBox(width: 24),
+              GestureDetector(
+                onTap: () => context.read<GroupsProvider>().likePost(post.id, false),
+                child: Row(children: [
+                  Icon(
+                    post.userLiked == false ? Icons.thumb_down : Icons.thumb_down_outlined,
+                    size: 20,
+                    color: post.userLiked == false ? Colors.blue : Colors.grey.shade600,
+                  ),
+                  const SizedBox(width: 4),
+                  Text('${post.dislikes}', style: Theme.of(context).textTheme.bodySmall),
+                ]),
+              ),
+              const SizedBox(width: 24),
+              Row(children: [
+                Icon(Icons.mode_comment_outlined, size: 20, color: Colors.grey.shade600),
+                const SizedBox(width: 4),
+                Text('${post.commentCount}', style: Theme.of(context).textTheme.bodySmall),
+              ]),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============ CLUBS TAB ============
 
 class ClubsTab extends StatefulWidget {
   const ClubsTab({super.key});
@@ -240,186 +206,89 @@ class ClubsTab extends StatefulWidget {
 }
 
 class _ClubsTabState extends State<ClubsTab> {
-  final List<Club> followedClubs = [
-    Club(
-      name: 'Morning Runners',
-      members: 1234,
-      category: 'Running',
-      isFollowed: true,
-      color: Colors.orange,
-    ),
-    Club(
-      name: 'Gym Warriors',
-      members: 2567,
-      category: 'Strength',
-      isFollowed: true,
-      color: Colors.blue,
-    ),
-  ];
-
-  final List<Club> recommendedClubs = [
-    Club(
-      name: 'Yoga Enthusiasts',
-      members: 890,
-      category: 'Flexibility',
-      isFollowed: false,
-      color: Colors.green,
-    ),
-    Club(
-      name: 'HIIT Masters',
-      members: 1456,
-      category: 'Cardio',
-      isFollowed: false,
-      color: Colors.red,
-    ),
-    Club(
-      name: 'Cycling Club',
-      members: 2100,
-      category: 'Cardio',
-      isFollowed: false,
-      color: Colors.teal,
-    ),
-  ];
+  final _searchController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Search Bar
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Search clubs...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
+    final provider = context.watch<GroupsProvider>();
+    final isSearching = _searchController.text.isNotEmpty;
+    final clubs = isSearching ? provider.searchedClubs : provider.myClubs;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Search clubs...',
+              prefixIcon: const Icon(Icons.search),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+              contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+            ),
+            onChanged: (query) {
+              if (query.isNotEmpty) {
+                provider.searchClubs(query);
+              }
+              setState(() {});
+            },
+          ),
+        ),
+        Expanded(
+          child: clubs.isEmpty
+              ? Center(child: Text(isSearching ? 'No clubs found' : 'No clubs yet', style: TextStyle(color: Colors.grey.shade500)))
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: clubs.length,
+                  itemBuilder: (context, index) {
+                    final club = clubs[index];
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 50, height: 50,
+                            decoration: BoxDecoration(color: const Color(0xFF6B5FFF).withAlpha(30), borderRadius: BorderRadius.circular(8)),
+                            child: const Center(child: Icon(Icons.groups, color: Color(0xFF6B5FFF))),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(club.name, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                                Text('${club.memberCount} members', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey)),
+                              ],
+                            ),
+                          ),
+                          if (!club.isMember)
+                            ElevatedButton(
+                              onPressed: () => provider.joinClub(club.id),
+                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6B5FFF), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                              child: const Text('Join', style: TextStyle(color: Colors.white)),
+                            )
+                          else
+                            const Icon(Icons.check_circle, color: Colors.green),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-              ),
-            ),
-          ),
-          // My Clubs
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              'My Clubs',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              children: followedClubs
-                  .map((club) => _ClubTile(club: club))
-                  .toList(),
-            ),
-          ),
-          const SizedBox(height: 24),
-          // Recommended
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              'Recommended For You',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              children: recommendedClubs
-                  .map((club) => _ClubTile(club: club))
-                  .toList(),
-            ),
-          ),
-          const SizedBox(height: 24),
-        ],
-      ),
+        ),
+      ],
     );
   }
-}
-
-class _ClubTile extends StatelessWidget {
-  final Club club;
-
-  const _ClubTile({required this.club});
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: club.color.withAlpha(100),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(child: Icon(Icons.group, color: club.color)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  club.name,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-                ),
-                Text(
-                  '${club.members} members • ${club.category}',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () {},
-            style: ElevatedButton.styleFrom(
-              backgroundColor: club.isFollowed
-                  ? Colors.grey.shade200
-                  : const Color(0xFF6B5FFF),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: Text(
-              club.isFollowed ? 'Following' : 'Follow',
-              style: TextStyle(
-                color: club.isFollowed ? Colors.black : Colors.white,
-                fontSize: 12,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 }
+
+// ============ FRIENDS TAB ============
 
 class FriendsTab extends StatefulWidget {
   const FriendsTab({super.key});
@@ -429,203 +298,143 @@ class FriendsTab extends StatefulWidget {
 }
 
 class _FriendsTabState extends State<FriendsTab> {
-  final List<Friend> friends = [
-    Friend(
-      name: 'John Doe',
-      status: 'Active now',
-      initials: 'JD',
-      favoriteColor: Colors.blue,
-      weeklyRuns: 5,
-      weeklyWorkouts: 4,
-    ),
-    Friend(
-      name: 'Emma Smith',
-      status: '30 min ago',
-      initials: 'ES',
-      favoriteColor: Colors.pink,
-      weeklyRuns: 3,
-      weeklyWorkouts: 5,
-    ),
-    Friend(
-      name: 'Mike Johnson',
-      status: '2 hours ago',
-      initials: 'MJ',
-      favoriteColor: Colors.orange,
-      weeklyRuns: 6,
-      weeklyWorkouts: 3,
-    ),
-    Friend(
-      name: 'Lisa Chen',
-      status: 'Active now',
-      initials: 'LC',
-      favoriteColor: Colors.teal,
-      weeklyRuns: 4,
-      weeklyWorkouts: 6,
-    ),
-  ];
+  final _searchController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: friends.length,
-      itemBuilder: (context, index) {
-        final friend = friends[index];
-        return GestureDetector(
-          onTap: () {
-            final profile = getFallbackProfile(
-              friend.name,
-              friend.initials,
-              friend.favoriteColor,
-            );
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => UserProfilePage(profile: profile),
-              ),
-            );
-          },
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade200),
+    final provider = context.watch<GroupsProvider>();
+    final isSearching = _searchController.text.isNotEmpty;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Search users...',
+              prefixIcon: const Icon(Icons.search),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+              contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
             ),
-            child: Row(
+            onChanged: (query) {
+              if (query.isNotEmpty) provider.searchUsers(query);
+              setState(() {});
+            },
+          ),
+        ),
+        // Incoming requests
+        if (provider.incomingRequests.isNotEmpty && !isSearching)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Stack(
-                  children: [
-                    Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: friend.favoriteColor.withAlpha(100),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          friend.initials,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        width: 14,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: friend.status == 'Active now'
-                              ? Colors.green
-                              : Colors.grey,
-                          border: Border.all(color: Colors.white, width: 2),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                Text('Friend Requests', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                ...provider.incomingRequests.map((req) => Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(12)),
+                  child: Row(
                     children: [
-                      Text(
-                        friend.name,
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        friend.status,
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodySmall?.copyWith(color: Colors.grey),
-                      ),
+                      Expanded(child: Text(req.friendName.isNotEmpty ? req.friendName : req.friendEmail)),
+                      IconButton(onPressed: () => provider.acceptRequest(req.friendshipId), icon: const Icon(Icons.check, color: Colors.green)),
+                      IconButton(onPressed: () => provider.rejectRequest(req.friendshipId), icon: const Icon(Icons.close, color: Colors.red)),
                     ],
                   ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Icon(
-                      Icons.message_outlined,
-                      size: 20,
-                      color: friend.favoriteColor,
-                    ),
-                    const SizedBox(height: 4),
-                    Icon(
-                      Icons.call_outlined,
-                      size: 20,
-                      color: friend.favoriteColor,
-                    ),
-                  ],
-                ),
+                )),
+                const SizedBox(height: 8),
               ],
             ),
+          ),
+        Expanded(
+          child: isSearching
+              ? _buildSearchResults(provider)
+              : _buildFriendsList(provider),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchResults(GroupsProvider provider) {
+    final results = provider.searchedUsers;
+    if (results.isEmpty) return const Center(child: Text('No users found', style: TextStyle(color: Colors.grey)));
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: results.length,
+      itemBuilder: (context, index) {
+        final user = results[index];
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
+          child: Row(
+            children: [
+              CircleAvatar(backgroundColor: const Color(0xFF6B5FFF).withAlpha(30),
+                child: Text(user.fullName.isNotEmpty ? user.fullName[0] : '?', style: const TextStyle(color: Color(0xFF6B5FFF)))),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(user.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(user.email, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+              ])),
+              ElevatedButton(
+                onPressed: () {
+                  provider.sendFriendRequest(user.email);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Request sent to ${user.fullName}')));
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6B5FFF), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                child: const Text('Add', style: TextStyle(color: Colors.white)),
+              ),
+            ],
           ),
         );
       },
     );
   }
-}
 
-class Post {
-  final String authorName;
-  final String authorImage;
-  final String timestamp;
-  final String content;
-  final int likes;
-  final int comments;
-  final String? imageUrl;
+  Widget _buildFriendsList(GroupsProvider provider) {
+    final friends = provider.friends;
+    if (friends.isEmpty) {
+      return Center(
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.people_outline, size: 48, color: Colors.grey.shade300),
+          const SizedBox(height: 12),
+          Text('No friends yet', style: TextStyle(color: Colors.grey.shade500)),
+          const SizedBox(height: 4),
+          Text('Search for users above', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+        ]),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: friends.length,
+      itemBuilder: (context, index) {
+        final friend = friends[index];
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
+          child: Row(
+            children: [
+              CircleAvatar(backgroundColor: const Color(0xFF6B5FFF).withAlpha(30),
+                child: Text(friend.friendName.isNotEmpty ? friend.friendName[0] : '?', style: const TextStyle(color: Color(0xFF6B5FFF)))),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(friend.friendName.isNotEmpty ? friend.friendName : friend.friendEmail, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(friend.friendEmail, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+              ])),
+              const Icon(Icons.chevron_right, color: Colors.grey),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
-  Post({
-    required this.authorName,
-    required this.authorImage,
-    required this.timestamp,
-    required this.content,
-    required this.likes,
-    required this.comments,
-    this.imageUrl,
-  });
-}
-
-class Club {
-  final String name;
-  final int members;
-  final String category;
-  final bool isFollowed;
-  final Color color;
-
-  Club({
-    required this.name,
-    required this.members,
-    required this.category,
-    required this.isFollowed,
-    required this.color,
-  });
-}
-
-class Friend {
-  final String name;
-  final String status;
-  final String initials;
-  final Color favoriteColor;
-  final int weeklyRuns;
-  final int weeklyWorkouts;
-
-  Friend({
-    required this.name,
-    required this.status,
-    required this.initials,
-    required this.favoriteColor,
-    required this.weeklyRuns,
-    required this.weeklyWorkouts,
-  });
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 }

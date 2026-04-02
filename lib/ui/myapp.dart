@@ -1,5 +1,9 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:trackon_mobile/data/providers/auth_provider.dart';
+import 'package:trackon_mobile/data/providers/notification_provider.dart';
+import 'package:trackon_mobile/ui/pages/auth/login_page.dart';
 import 'package:trackon_mobile/ui/pages/homepage/core.dart';
 import 'package:trackon_mobile/ui/pages/fitnesspage/core.dart';
 import 'package:trackon_mobile/ui/pages/groupspage/core.dart';
@@ -12,6 +16,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'TrackOn',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
@@ -30,8 +35,43 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const MainNavigation(),
+      home: const AuthWrapper(),
     );
+  }
+}
+
+class AuthWrapper extends StatefulWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  @override
+  void initState() {
+    super.initState();
+    // Check auth state on startup
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AuthProvider>().checkAuth();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = context.watch<AuthProvider>();
+
+    if (authProvider.isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (!authProvider.isLoggedIn) {
+      return const LoginPage();
+    }
+
+    return const MainNavigation();
   }
 }
 
@@ -51,6 +91,15 @@ class _MainNavigationState extends State<MainNavigation> {
     const FitnessPage(),
     const GroupsPage(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Start notification polling when logged in
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<NotificationProvider>().startPolling();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

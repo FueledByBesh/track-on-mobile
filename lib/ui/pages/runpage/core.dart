@@ -4,7 +4,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/location_service.dart';
+import 'package:trackon_mobile/data/providers/activity_provider.dart';
 
 class RunPage extends StatefulWidget {
   const RunPage({super.key});
@@ -14,22 +16,21 @@ class RunPage extends StatefulWidget {
 }
 
 class _RunPageState extends State<RunPage> {
-  bool isRunning = false;
-  int seconds = 0;
-  double distance = 0.0;
-
   final LocationService _locationService = LocationService();
   final MapController _mapController = MapController();
 
   LatLng? _currentPosition;
   bool _loadingLocation = true;
   String? _locationError;
-  Timer? _timer;
+  final List<LatLng> _routePoints = [];
 
   @override
   void initState() {
     super.initState();
     _initLocation();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ActivityProvider>().loadHistory();
+    });
   }
 
   Future<void> _initLocation() async {
@@ -47,51 +48,70 @@ class _RunPageState extends State<RunPage> {
     }
   }
 
-  void _startRun() {
-    setState(() {
-      isRunning = true;
-      seconds = 0;
-      distance = 0.0;
-    });
-
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      setState(() => seconds++);
-    });
-
-    _locationService.startTracking(
-      onPosition: (Position pos) {
-        final newPos = LatLng(pos.latitude, pos.longitude);
-        if (_currentPosition != null) {
-          final d = _locationService.distanceBetween(
-            _currentPosition!.latitude,
-            _currentPosition!.longitude,
-            newPos.latitude,
-            newPos.longitude,
-          );
-          setState(() => distance += d / 1000); // meters to km
-        }
-        setState(() => _currentPosition = newPos);
-        _mapController.move(newPos, _mapController.camera.zoom);
-      },
-      distanceFilter: 5,
-    );
+  Future<void> _startRun() async {
+    final provider = context.read<ActivityProvider>();
+    final activity = await provider.startActivity('RUNNING');
+    if (activity != null) {
+      _routePoints.clear();
+      if (_currentPosition != null) {
+        _routePoints.add(_currentPosition!);
+      }
+      _locationService.startTracking(
+        onPosition: (Position pos) {
+          final newPos = LatLng(pos.latitude, pos.longitude);
+          setState(() {
+            _currentPosition = newPos;
+            _routePoints.add(newPos);
+          });
+          _mapController.move(newPos, _mapController.camera.zoom);
+        },
+        distanceFilter: 5,
+      );
+    }
   }
 
-  void _stopRun() {
-    _timer?.cancel();
+  Future<void> _stopRun() async {
     _locationService.stopTracking();
-    setState(() => isRunning = false);
+    final provider = context.read<ActivityProvider>();
+    final result = await provider.stopActivity();
+    if (result != null && mounted) {
+      _routePoints.clear();
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Run Complete!'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Distance: ${result.distanceKm.toStringAsFixed(2)} km'),
+              Text('Duration: ${result.formattedDuration}'),
+              Text('Avg Pace: ${result.formattedPace} /km'),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
     _locationService.stopTracking();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final activityProvider = context.watch<ActivityProvider>();
+    final isRunning = activityProvider.isTracking;
+    final seconds = activityProvider.liveDuration;
+    final distance = activityProvider.liveDistance;
     final minutes = seconds ~/ 60;
     final displaySeconds = seconds % 60;
 
@@ -101,7 +121,6 @@ class _RunPageState extends State<RunPage> {
           Expanded(
             child: Stack(
               children: [
-                // Map
                 _buildMap(),
                 // Top Info Bar
                 Positioned(
@@ -210,11 +229,10 @@ class _RunPageState extends State<RunPage> {
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color:
-                                  (isRunning
-                                          ? Colors.red
-                                          : const Color(0xFF6B5FFF))
-                                      .withAlpha(150),
+                              color: (isRunning
+                                      ? Colors.red
+                                      : const Color(0xFF6B5FFF))
+                                  .withAlpha(150),
                               blurRadius: 12,
                               spreadRadius: 2,
                             ),
@@ -222,7 +240,7 @@ class _RunPageState extends State<RunPage> {
                         ),
                         child: Center(
                           child: Icon(
-                            isRunning ? Icons.pause : Icons.play_arrow,
+                            isRunning ? Icons.stop : Icons.play_arrow,
                             color: Colors.white,
                             size: 40,
                           ),
@@ -232,10 +250,7 @@ class _RunPageState extends State<RunPage> {
                     GestureDetector(
                       onTap: () {
                         if (_currentPosition != null) {
-                          _mapController.move(
-                            _currentPosition!,
-                            16.0,
-                          );
+                          _mapController.move(_currentPosition!, 16.0);
                         }
                       },
                       child: Container(
@@ -259,39 +274,9 @@ class _RunPageState extends State<RunPage> {
                     onPressed: () {
                       if (!isRunning) {
                         _startRun();
-                        return;
+                      } else {
+                        _stopRun();
                       }
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Finish Run?'),
-                          content: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Time: ${minutes.toString().padLeft(2, '0')}:${displaySeconds.toString().padLeft(2, '0')}',
-                              ),
-                              Text(
-                                'Distance: ${distance.toStringAsFixed(2)} km',
-                              ),
-                            ],
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Cancel'),
-                            ),
-                            ElevatedButton(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _stopRun();
-                              },
-                              child: const Text('Finish'),
-                            ),
-                          ],
-                        ),
-                      );
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: isRunning
@@ -366,6 +351,16 @@ class _RunPageState extends State<RunPage> {
           userAgentPackageName: 'com.trackon.mobile',
           maxZoom: 20,
         ),
+        if (_routePoints.length >= 2)
+          PolylineLayer(
+            polylines: [
+              Polyline(
+                points: _routePoints,
+                strokeWidth: 4.0,
+                color: const Color(0xFF6B5FFF),
+              ),
+            ],
+          ),
         MarkerLayer(
           markers: [
             Marker(
@@ -409,32 +404,7 @@ class RunningHistorySheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<RunHistory> history = [
-      RunHistory(
-        date: DateTime.now().subtract(const Duration(days: 2)),
-        duration: 2100,
-        distance: 8.5,
-        avgPace: '4:06',
-      ),
-      RunHistory(
-        date: DateTime.now().subtract(const Duration(days: 5)),
-        duration: 1800,
-        distance: 7.2,
-        avgPace: '4:10',
-      ),
-      RunHistory(
-        date: DateTime.now().subtract(const Duration(days: 8)),
-        duration: 2400,
-        distance: 10.0,
-        avgPace: '4:00',
-      ),
-      RunHistory(
-        date: DateTime.now().subtract(const Duration(days: 10)),
-        duration: 1500,
-        distance: 6.0,
-        avgPace: '4:10',
-      ),
-    ];
+    final history = context.watch<ActivityProvider>().history;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -444,88 +414,98 @@ class RunningHistorySheet extends StatelessWidget {
         children: [
           Text(
             'Running History',
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 16),
-          Expanded(
-            child: ListView.builder(
-              itemCount: history.length,
-              itemBuilder: (context, index) {
-                final run = history[index];
-                final minutes = run.duration ~/ 60;
-                final seconds = run.duration % 60;
+          if (history.isEmpty)
+            const Expanded(
+              child: Center(
+                child: Text('No activities yet', style: TextStyle(color: Colors.grey)),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.builder(
+                itemCount: history.length,
+                itemBuilder: (context, index) {
+                  final run = history[index];
+                  final dur = run.durationSeconds ?? 0;
+                  final mins = dur ~/ 60;
+                  final secs = dur % 60;
+                  final dateStr = run.startTime.isNotEmpty
+                      ? DateFormat('MMM d, yyyy').format(DateTime.parse(run.startTime))
+                      : '';
 
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              DateFormat('MMM d, yyyy').format(run.date),
-                              style: Theme.of(context).textTheme.titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w600),
-                            ),
-                            Text(
-                              '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}',
-                              style: Theme.of(context).textTheme.titleSmall
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.orange,
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    run.activityType == 'RUNNING'
+                                        ? Icons.directions_run
+                                        : run.activityType == 'BIKING'
+                                            ? Icons.directions_bike
+                                            : Icons.directions_walk,
+                                    size: 18,
+                                    color: const Color(0xFF6B5FFF),
                                   ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              '${run.distance.toStringAsFixed(1)} km',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: Colors.grey),
-                            ),
-                            Text(
-                              'Pace: ${run.avgPace} /km',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ],
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    dateStr,
+                                    style: Theme.of(context).textTheme.titleSmall
+                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                              Text(
+                                '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}',
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.orange,
+                                    ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                '${run.distanceKm.toStringAsFixed(1)} km',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: Colors.grey),
+                              ),
+                              if (run.avgPaceMinPerKm != null)
+                                Text(
+                                  'Pace: ${run.avgPaceMinPerKm!.toStringAsFixed(1)} min/km',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(color: Colors.grey),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
-          ),
         ],
       ),
     );
   }
-}
-
-class RunHistory {
-  final DateTime date;
-  final int duration;
-  final double distance;
-  final String avgPace;
-
-  RunHistory({
-    required this.date,
-    required this.duration,
-    required this.distance,
-    required this.avgPace,
-  });
 }

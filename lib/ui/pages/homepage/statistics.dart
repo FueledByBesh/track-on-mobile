@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:provider/provider.dart';
+import 'package:trackon_mobile/data/providers/steps_provider.dart';
 import 'dart:math' as math;
 
 enum StatsItemType {
@@ -230,22 +232,56 @@ class _StatisticsContainer extends State<StatisticsContainer>
     // setupPositionsAndSizes();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final stepsProvider = context.watch<StepsProvider>();
+    final todaySteps = stepsProvider.today;
+    _statsData = [
+      StatisticsData(
+        type: StatsItemType.steps,
+        todayValue: '${todaySteps.stepCount}',
+        weeklyData: stepsProvider.history.length >= 7
+            ? stepsProvider.history.take(7).map((e) => e.stepCount.toDouble()).toList().reversed.toList()
+            : [0, 0, 0, 0, 0, 0, todaySteps.stepCount.toDouble()],
+      ),
+      StatisticsData(
+        type: StatsItemType.activity,
+        todayValue: '${(todaySteps.stepCount * 0.004).toStringAsFixed(0)}',
+        weeklyData: stepsProvider.history.length >= 7
+            ? stepsProvider.history.take(7).map((e) => e.stepCount * 0.004).toList().reversed.toList()
+            : [0, 0, 0, 0, 0, 0, todaySteps.stepCount * 0.004],
+      ),
+      StatisticsData(
+        type: StatsItemType.mileage,
+        todayValue: '${todaySteps.distanceKm.toStringAsFixed(1)}',
+        weeklyData: stepsProvider.history.length >= 7
+            ? stepsProvider.history.take(7).map((e) => e.distanceKm).toList().reversed.toList()
+            : [0, 0, 0, 0, 0, 0, todaySteps.distanceKm],
+      ),
+    ];
+
+    _preparedData = _statsData
+        .map((data) => PreparedItemData.from(data))
+        .toList();
+  }
+
   void initData() {
     _statsData = [
       StatisticsData(
         type: StatsItemType.steps,
-        todayValue: '11539',
-        weeklyData: [6200, 7500, 8200, 8432, 7100, 6800, 7900],
+        todayValue: '0',
+        weeklyData: [0, 0, 0, 0, 0, 0, 0],
       ),
       StatisticsData(
         type: StatsItemType.activity,
-        todayValue: '45',
-        weeklyData: [30, 35, 50, 45, 40, 55, 48],
+        todayValue: '0',
+        weeklyData: [0, 0, 0, 0, 0, 0, 0],
       ),
       StatisticsData(
         type: StatsItemType.mileage,
-        todayValue: '5.5',
-        weeklyData: [3.2, 4.5, 5.0, 5.5, 4.8, 3.9, 5.2],
+        todayValue: '0',
+        weeklyData: [0, 0, 0, 0, 0, 0, 0],
       ),
     ];
 
