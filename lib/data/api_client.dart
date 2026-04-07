@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class ApiClient {
-  static const String baseUrl =
-      'http://10.227.91.236:8080'; // Android emulator -> host localhost
+  static const String baseUrl = 'http://track-on.duckdns.org:8080';
   static const String _accessTokenKey = 'access_token';
   static const String _refreshTokenKey = 'refresh_token';
   static const _storage = FlutterSecureStorage();
@@ -90,7 +89,6 @@ class ApiClient {
   }
 
   // Token storage methods
-
   static Future<void> saveTokens(
     String accessToken,
     String refreshToken,
