@@ -8,6 +8,7 @@ class StepsProvider extends ChangeNotifier {
   List<DailySteps> _history = [];
   List<StepInterval> _intervals = [];
   bool _isLoading = false;
+  bool _hasLoadedToday = false;
 
   StepsProvider(this._service);
 
@@ -17,10 +18,13 @@ class StepsProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
 
   Future<void> loadToday() async {
-    _isLoading = true;
-    notifyListeners();
+    if (!_hasLoadedToday) {
+      _isLoading = true;
+      notifyListeners();
+    }
     try {
       _today = await _service.getToday();
+      _hasLoadedToday = true;
     } catch (e) {
       debugPrint('Error loading today steps: $e');
     }

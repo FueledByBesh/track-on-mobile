@@ -13,6 +13,9 @@ class FitnessProvider extends ChangeNotifier {
   DateTime _selectedDate = DateTime.now();
   String? _selectedCategory;
   bool _isLoading = false;
+  bool _hasLoadedPlanned = false;
+  bool _hasLoadedPrograms = false;
+  bool _hasLoadedLibrary = false;
 
   FitnessProvider(this._workoutService, this._programService, this._plannedService);
 
@@ -37,19 +40,28 @@ class FitnessProvider extends ChangeNotifier {
   }
 
   Future<void> loadWorkoutLibrary() async {
+    if (!_hasLoadedLibrary) {
+      _isLoading = true;
+      notifyListeners();
+    }
     try {
       _workoutLibrary = await _workoutService.getAll();
-      notifyListeners();
+      _hasLoadedLibrary = true;
     } catch (e) {
       debugPrint('Error loading workout library: $e');
     }
+    _isLoading = false;
+    notifyListeners();
   }
 
   Future<void> loadPrograms() async {
-    _isLoading = true;
-    notifyListeners();
+    if (!_hasLoadedPrograms) {
+      _isLoading = true;
+      notifyListeners();
+    }
     try {
       _programs = await _programService.getAll();
+      _hasLoadedPrograms = true;
     } catch (e) {
       debugPrint('Error loading programs: $e');
     }
@@ -58,11 +70,14 @@ class FitnessProvider extends ChangeNotifier {
   }
 
   Future<void> loadPlannedWorkouts() async {
-    _isLoading = true;
-    notifyListeners();
+    if (!_hasLoadedPlanned) {
+      _isLoading = true;
+      notifyListeners();
+    }
     try {
       final dateStr = _selectedDate.toIso8601String().split('T')[0];
       _plannedWorkouts = await _plannedService.getByDate(dateStr);
+      _hasLoadedPlanned = true;
     } catch (e) {
       debugPrint('Error loading planned workouts: $e');
     }

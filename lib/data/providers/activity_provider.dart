@@ -27,12 +27,16 @@ class ActivityProvider extends ChangeNotifier {
   bool get isTracking => _isTracking;
   double get liveDistance => _liveDistance;
   int get liveDuration => _liveDuration;
+  bool _hasLoadedHistory = false;
 
   Future<void> loadHistory() async {
-    _isLoading = true;
-    notifyListeners();
+    if (!_hasLoadedHistory) {
+      _isLoading = true;
+      notifyListeners();
+    }
     try {
       _history = await _service.getAll();
+      _hasLoadedHistory = true;
     } catch (e) {
       debugPrint('Error loading activity history: $e');
     }

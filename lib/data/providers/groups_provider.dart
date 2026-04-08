@@ -19,6 +19,7 @@ class GroupsProvider extends ChangeNotifier {
   List<Friendship> _incomingRequests = [];
   List<UserSearchResult> _searchedUsers = [];
   bool _isLoading = false;
+  bool _hasLoadedFeed = false;
 
   GroupsProvider(this._postService, this._clubService, this._friendshipService);
 
@@ -31,10 +32,13 @@ class GroupsProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
 
   Future<void> loadFeed() async {
-    _isLoading = true;
-    notifyListeners();
+    if (!_hasLoadedFeed) {
+      _isLoading = true;
+      notifyListeners();
+    }
     try {
       _feed = await _postService.getFeed();
+      _hasLoadedFeed = true;
     } catch (e) {
       debugPrint('Error loading feed: $e');
     }
