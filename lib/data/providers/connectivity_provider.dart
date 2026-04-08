@@ -94,7 +94,10 @@ class ConnectivityProvider extends ChangeNotifier {
         return true;
       }
     } catch (_) {
-      // Still unreachable
+      // Server unreachable — update reason if we have network but server is down
+      if (_hasNetwork) {
+        _setOffline(OfflineReason.serverUnreachable);
+      }
     }
 
     _isChecking = false;
