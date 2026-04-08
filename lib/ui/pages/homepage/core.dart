@@ -4,7 +4,6 @@ import 'statistics.dart';
 import 'dart:ui';
 import 'package:trackon_mobile/data/providers/steps_provider.dart';
 import 'package:trackon_mobile/data/providers/fitness_provider.dart';
-import 'package:trackon_mobile/data/providers/notification_provider.dart';
 import 'package:trackon_mobile/data/models/workout.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/notifications_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/profile_page.dart';
@@ -123,8 +122,6 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    final unreadCount = context.watch<NotificationProvider>().unreadCount;
-
     return SafeArea(
       child: ClipRect(
         child: BackdropFilter(
@@ -156,35 +153,17 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                   ),
                 ),
                 const Spacer(),
-                Stack(
-                  children: [
-                    IconButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const NotificationsPage(),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.notifications_outlined),
-                      color: Colors.grey.shade700,
-                    ),
-                    if (unreadCount > 0)
-                      Positioned(
-                        right: 8,
-                        top: 8,
-                        child: Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 1.5),
-                          ),
-                        ),
+                IconButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const NotificationsPage(),
                       ),
-                  ],
+                    );
+                  },
+                  icon: const Icon(Icons.notifications_outlined),
+                  color: Colors.grey.shade700,
                 ),
                 IconButton(
                   onPressed: () {

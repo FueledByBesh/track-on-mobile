@@ -27,6 +27,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
       appBar: AppBar(
         title: const Text('Notifications'),
         actions: [
+          IconButton(
+            onPressed: provider.isLoading ? null : () => provider.loadAll(),
+            icon: provider.isLoading
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.refresh),
+          ),
           if (notifications.any((n) => !n.markedAsRead))
             TextButton(
               onPressed: () => provider.markAllAsRead(),

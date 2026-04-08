@@ -2,7 +2,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/providers/auth_provider.dart';
-import 'package:trackon_mobile/data/providers/notification_provider.dart';
 import 'package:trackon_mobile/ui/pages/auth/login_page.dart';
 import 'package:trackon_mobile/ui/pages/homepage/core.dart';
 import 'package:trackon_mobile/ui/pages/fitnesspage/core.dart';
@@ -91,15 +90,6 @@ class _MainNavigationState extends State<MainNavigation> {
     const FitnessPage(),
     const GroupsPage(),
   ];
-
-  @override
-  void initState() {
-    super.initState();
-    // Start notification polling when logged in
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<NotificationProvider>().startPolling();
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
