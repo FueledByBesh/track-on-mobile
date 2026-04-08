@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -9,9 +10,10 @@ class ApiClient {
   static const _storage = FlutterSecureStorage();
 
   late final Dio dio;
-
-  // Separate Dio for refresh requests (avoids interceptor loop)
   late final Dio _refreshDio;
+
+  // Prevents multiple concurrent refresh attempts
+  Completer<bool>? _refreshCompleter;
 
   ApiClient() {
     dio = Dio(
@@ -42,34 +44,48 @@ class ApiClient {
           handler.next(options);
         },
         onError: (error, handler) async {
-          // Auto-refresh on 401
-          if (error.response?.statusCode == 401) {
-            try {
-              final refreshed = await tryRefresh();
-              if (refreshed) {
-                // Retry the original request with new token
-                final token = await getAccessToken();
-                final opts = error.requestOptions;
-                opts.headers['Authorization'] = 'Bearer $token';
-                final response = await dio.fetch(opts);
-                return handler.resolve(response);
-              }
-            } catch (_) {
-              // Refresh failed, clear tokens
-              await clearTokens();
-            }
+          if (error.response?.statusCode != 401) {
+            return handler.next(error);
           }
-          handler.next(error);
+
+          try {
+            final refreshed = await tryRefresh();
+            if (!refreshed) {
+              await clearTokens();
+              return handler.next(error);
+            }
+
+            // Retry with new token using _refreshDio to avoid re-entering this interceptor
+            final token = await getAccessToken();
+            final opts = error.requestOptions;
+            opts.headers['Authorization'] = 'Bearer $token';
+            final response = await _refreshDio.fetch(opts);
+            return handler.resolve(response);
+          } catch (_) {
+            await clearTokens();
+            return handler.next(error);
+          }
         },
       ),
     );
   }
 
+  /// Refresh tokens. If multiple requests 401 at the same time,
+  /// only one refresh runs — the others wait for its result.
   Future<bool> tryRefresh() async {
-    final refreshToken = await getRefreshToken();
-    if (refreshToken == null) return false;
+    if (_refreshCompleter != null) {
+      return _refreshCompleter!.future;
+    }
+
+    _refreshCompleter = Completer<bool>();
 
     try {
+      final refreshToken = await getRefreshToken();
+      if (refreshToken == null) {
+        _refreshCompleter!.complete(false);
+        return false;
+      }
+
       final response = await _refreshDio.post(
         '/auth/refresh',
         data: {'refreshToken': refreshToken},
@@ -80,15 +96,21 @@ class ApiClient {
           response.data['accessToken'],
           response.data['refreshToken'],
         );
+        _refreshCompleter!.complete(true);
         return true;
       }
+
+      _refreshCompleter!.complete(false);
+      return false;
     } catch (e) {
       debugPrint('Token refresh failed: $e');
+      _refreshCompleter!.complete(false);
+      return false;
+    } finally {
+      _refreshCompleter = null;
     }
-    return false;
   }
 
-  // Token storage methods
   static Future<void> saveTokens(
     String accessToken,
     String refreshToken,
@@ -108,7 +130,6 @@ class ApiClient {
   static Future<void> clearTokens() async {
     await _storage.delete(key: _accessTokenKey);
     await _storage.delete(key: _refreshTokenKey);
-    debugPrint("Tokens cleared");
   }
 
   static Future<bool> hasTokens() async {
