@@ -45,7 +45,7 @@ class ApiClient {
           // Auto-refresh on 401
           if (error.response?.statusCode == 401) {
             try {
-              final refreshed = await _tryRefresh();
+              final refreshed = await tryRefresh();
               if (refreshed) {
                 // Retry the original request with new token
                 final token = await getAccessToken();
@@ -65,7 +65,7 @@ class ApiClient {
     );
   }
 
-  Future<bool> _tryRefresh() async {
+  Future<bool> tryRefresh() async {
     final refreshToken = await getRefreshToken();
     if (refreshToken == null) return false;
 
@@ -108,6 +108,7 @@ class ApiClient {
   static Future<void> clearTokens() async {
     await _storage.delete(key: _accessTokenKey);
     await _storage.delete(key: _refreshTokenKey);
+    debugPrint("Tokens cleared");
   }
 
   static Future<bool> hasTokens() async {

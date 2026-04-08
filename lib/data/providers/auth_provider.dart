@@ -11,8 +11,10 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoggedIn = false;
 
   // Google OAuth configuration
-  static const String _googleAuthUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
-  static const String _googleClientId = '120620645123-siv1rdhmjvfqf30qest8cokvaj2794rl.apps.googleusercontent.com';
+  static const String _googleAuthUrl =
+      'https://accounts.google.com/o/oauth2/v2/auth';
+  static const String _googleClientId =
+      '120620645123-siv1rdhmjvfqf30qest8cokvaj2794rl.apps.googleusercontent.com';
   static const String _redirectUri = '${ApiClient.baseUrl}/auth/callback';
   static const String _scopes = 'openid profile email';
 
@@ -22,19 +24,23 @@ class AuthProvider extends ChangeNotifier {
   bool get isLoggedIn => _isLoggedIn;
 
   /// Check if we have valid tokens on app startup.
+  /// The Dio interceptor auto-refreshes on 401, so a single test request is enough:
+  /// - Access token valid → 200 → logged in
+  /// - Access token expired → interceptor refreshes → retries → 200 → logged in
+  /// - Refresh also fails → interceptor clears tokens → throws → catch → logged out
   Future<void> checkAuth() async {
     _isLoading = true;
     notifyListeners();
 
     final hasTokens = await ApiClient.hasTokens();
     if (hasTokens) {
-      // Try a test request to see if the token works (or gets auto-refreshed)
       try {
         await _api.dio.get('/api/steps/today');
         _isLoggedIn = true;
       } catch (_) {
-        // Token invalid and refresh also failed
+        // Both access and refresh tokens are invalid/expired
         await ApiClient.clearTokens();
+        debugPrint("Tokens cleared");
         _isLoggedIn = false;
       }
     }
@@ -56,18 +62,23 @@ class AuthProvider extends ChangeNotifier {
       final state = _generateState();
 
       // 2. Construct Google OAuth URL
-      final authUrl = Uri.parse(_googleAuthUrl).replace(queryParameters: {
-        'client_id': _googleClientId,
-        'redirect_uri': _redirectUri,
-        'scope': _scopes,
-        'response_type': 'code',
-        'state': state,
-        'access_type': 'offline',
-        'prompt': 'consent',
-      });
+      final authUrl = Uri.parse(_googleAuthUrl).replace(
+        queryParameters: {
+          'client_id': _googleClientId,
+          'redirect_uri': _redirectUri,
+          'scope': _scopes,
+          'response_type': 'code',
+          'state': state,
+          'access_type': 'offline',
+          'prompt': 'consent',
+        },
+      );
 
       // 3. Open in external browser
-      final launched = await launchUrl(authUrl, mode: LaunchMode.externalApplication);
+      final launched = await launchUrl(
+        authUrl,
+        mode: LaunchMode.externalApplication,
+      );
       if (!launched) {
         _isLoading = false;
         notifyListeners();
@@ -77,7 +88,10 @@ class AuthProvider extends ChangeNotifier {
       // 4. Poll backend for tokens (every 1.5 seconds, max 5 minutes)
       final tokens = await _pollForTokens(state);
       if (tokens != null) {
-        await ApiClient.saveTokens(tokens['accessToken']!, tokens['refreshToken']!);
+        await ApiClient.saveTokens(
+          tokens['accessToken']!,
+          tokens['refreshToken']!,
+        );
         _isLoggedIn = true;
         _isLoading = false;
         notifyListeners();
@@ -97,18 +111,24 @@ class AuthProvider extends ChangeNotifier {
   /// Returns null if timeout (5 minutes).
   Future<Map<String, String>?> _pollForTokens(String state) async {
     // Use a separate Dio to avoid auth interceptor (these are unauthenticated requests)
-    final pollDio = Dio(BaseOptions(
-      baseUrl: ApiClient.baseUrl,
-      connectTimeout: const Duration(seconds: 5),
-      receiveTimeout: const Duration(seconds: 5),
-    ));
+    final pollDio = Dio(
+      BaseOptions(
+        baseUrl: ApiClient.baseUrl,
+        connectTimeout: const Duration(seconds: 5),
+        receiveTimeout: const Duration(seconds: 5),
+      ),
+    );
 
     const maxAttempts = 200; // 200 * 1.5s = 5 minutes
     for (int i = 0; i < maxAttempts; i++) {
       await Future.delayed(const Duration(milliseconds: 1500));
       try {
-        final response = await pollDio.get('/auth/token', queryParameters: {'state': state});
-        if (response.statusCode == 200 && response.data['accessToken'] != null) {
+        final response = await pollDio.get(
+          '/auth/token',
+          queryParameters: {'state': state},
+        );
+        if (response.statusCode == 200 &&
+            response.data['accessToken'] != null) {
           return {
             'accessToken': response.data['accessToken'] as String,
             'refreshToken': response.data['refreshToken'] as String,
