@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'providers/connectivity_provider.dart';
 
 class ApiClient {
   static const String baseUrl = 'http://track-on.duckdns.org:8080';
@@ -12,8 +13,10 @@ class ApiClient {
   late final Dio dio;
   late final Dio _refreshDio;
 
-  // Prevents multiple concurrent refresh attempts
   Completer<bool>? _refreshCompleter;
+
+  // Set after providers are created in main.dart
+  ConnectivityProvider? connectivityProvider;
 
   ApiClient() {
     dio = Dio(
@@ -37,6 +40,17 @@ class ApiClient {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          // Short-circuit if offline — don't waste battery on doomed requests
+          if (connectivityProvider != null && !connectivityProvider!.isOnline) {
+            return handler.reject(
+              DioException(
+                requestOptions: options,
+                type: DioExceptionType.connectionError,
+                message: 'Offline — request blocked',
+              ),
+            );
+          }
+
           final token = await getAccessToken();
           if (token != null) {
             options.headers['Authorization'] = 'Bearer $token';
@@ -44,6 +58,13 @@ class ApiClient {
           handler.next(options);
         },
         onError: (error, handler) async {
+          // Detect connection errors and report to ConnectivityProvider
+          if (_isConnectionError(error)) {
+            connectivityProvider?.reportConnectionError();
+            return handler.next(error);
+          }
+
+          // Auto-refresh on 401
           if (error.response?.statusCode != 401) {
             return handler.next(error);
           }
@@ -55,7 +76,6 @@ class ApiClient {
               return handler.next(error);
             }
 
-            // Retry with new token using _refreshDio to avoid re-entering this interceptor
             final token = await getAccessToken();
             final opts = error.requestOptions;
             opts.headers['Authorization'] = 'Bearer $token';
@@ -70,8 +90,13 @@ class ApiClient {
     );
   }
 
-  /// Refresh tokens. If multiple requests 401 at the same time,
-  /// only one refresh runs — the others wait for its result.
+  bool _isConnectionError(DioException error) {
+    return error.type == DioExceptionType.connectionError ||
+        error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.sendTimeout ||
+        error.type == DioExceptionType.receiveTimeout;
+  }
+
   Future<bool> tryRefresh() async {
     if (_refreshCompleter != null) {
       return _refreshCompleter!.future;

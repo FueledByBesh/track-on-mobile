@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/providers/auth_provider.dart';
+import 'package:trackon_mobile/data/providers/connectivity_provider.dart';
 import 'package:trackon_mobile/ui/pages/auth/login_page.dart';
 import 'package:trackon_mobile/ui/pages/homepage/core.dart';
 import 'package:trackon_mobile/ui/pages/fitnesspage/core.dart';
@@ -93,49 +94,97 @@ class _MainNavigationState extends State<MainNavigation> {
 
   @override
   Widget build(BuildContext context) {
+    final connectivity = context.watch<ConnectivityProvider>();
+
     return Scaffold(
       extendBody: true,
       body: _pages[_currentIndex],
-      bottomNavigationBar: ClipRRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withAlpha(180),
-              border: Border(
-                top: BorderSide(color: Colors.grey.shade200, width: 0.5),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Offline banner — sits above bottom nav
+          if (!connectivity.isOnline)
+            GestureDetector(
+              onTap: connectivity.isChecking ? null : () => connectivity.checkHealth(),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                color: connectivity.offlineReason == OfflineReason.noConnection
+                    ? Colors.grey.shade700
+                    : Colors.orange.shade700,
+                child: Row(
+                  children: [
+                    Icon(
+                      connectivity.offlineReason == OfflineReason.noConnection
+                          ? Icons.wifi_off
+                          : Icons.cloud_off,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        connectivity.offlineMessage,
+                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                      ),
+                    ),
+                    if (connectivity.isChecking)
+                      const SizedBox(
+                        width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    else
+                      const Text(
+                        'Tap to retry',
+                        style: TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                  ],
+                ),
               ),
             ),
-            child: BottomNavigationBar(
-              currentIndex: _currentIndex,
-              onTap: (index) {
-                setState(() {
-                  _currentIndex = index;
-                });
-              },
-              type: BottomNavigationBarType.fixed,
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              selectedItemColor: const Color(0xFF6B5FFF),
-              unselectedItemColor: Colors.grey,
-              items: const [
-                BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.directions_run),
-                  label: 'Run',
+          // Bottom navigation bar
+          ClipRRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withAlpha(180),
+                  border: Border(
+                    top: BorderSide(color: Colors.grey.shade200, width: 0.5),
+                  ),
                 ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.fitness_center),
-                  label: 'Fitness',
+                child: BottomNavigationBar(
+                  currentIndex: _currentIndex,
+                  onTap: (index) {
+                    setState(() {
+                      _currentIndex = index;
+                    });
+                  },
+                  type: BottomNavigationBarType.fixed,
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
+                  selectedItemColor: const Color(0xFF6B5FFF),
+                  unselectedItemColor: Colors.grey,
+                  items: const [
+                    BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+                    BottomNavigationBarItem(
+                      icon: Icon(Icons.directions_run),
+                      label: 'Run',
+                    ),
+                    BottomNavigationBarItem(
+                      icon: Icon(Icons.fitness_center),
+                      label: 'Fitness',
+                    ),
+                    BottomNavigationBarItem(
+                      icon: Icon(Icons.group),
+                      label: 'Groups',
+                    ),
+                  ],
                 ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.group),
-                  label: 'Groups',
-                ),
-              ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
