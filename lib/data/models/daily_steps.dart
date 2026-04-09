@@ -50,6 +50,7 @@ class StepInterval {
   final String end;
   final int stepsValue;
   final String date;
+  final String? source;
 
   StepInterval({
     this.id,
@@ -57,6 +58,7 @@ class StepInterval {
     required this.end,
     required this.stepsValue,
     required this.date,
+    this.source,
   });
 
   factory StepInterval.fromJson(Map<String, dynamic> json) {
@@ -66,6 +68,7 @@ class StepInterval {
       end: json['end'] ?? '',
       stepsValue: json['stepsValue'] ?? 0,
       date: json['date'] ?? '',
+      source: json['source'],
     );
   }
 
@@ -73,5 +76,6 @@ class StepInterval {
     'start': start,
     'end': end,
     'stepsValue': stepsValue,
+    if (source != null) 'source': source,
   };
 }

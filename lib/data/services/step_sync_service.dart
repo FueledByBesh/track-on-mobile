@@ -223,6 +223,7 @@ class StepSyncService {
       end: r['end_time'] as String,
       stepsValue: r['steps_value'] as int,
       date: r['date'] as String,
+      source: r['source'] as String?,
     )).toList();
   }
 
