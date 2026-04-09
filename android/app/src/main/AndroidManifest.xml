@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.activity_recognition"/>
+    <uses-permission android:name="android.permission.health.READ_STEPS"/>
     <application
         android:label="trackon_vbccd"
         android:name="${applicationName}"
@@ -34,6 +36,14 @@
                 <data android:scheme="trackon" android:host="auth"/>
             </intent-filter>
         </activity>
+        <!-- Health Connect permission request activity -->
+        <activity
+            android:name="androidx.health.connect.client.permission.HealthDataRequestPermissionsActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
@@ -50,5 +60,7 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Required to find Health Connect -->
+        <package android:name="com.google.android.apps.healthdata" />
     </queries>
 </manifest>
