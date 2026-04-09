@@ -76,6 +76,7 @@ class StepInterval {
     'start': start,
     'end': end,
     'stepsValue': stepsValue,
+    'date': date,
     if (source != null) 'source': source,
   };
 }

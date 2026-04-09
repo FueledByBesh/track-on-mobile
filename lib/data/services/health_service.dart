@@ -1,17 +1,47 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:health/health.dart';
 
 class HealthService {
   static final Health _health = Health();
   static bool _authorized = false;
+  static bool _available = false;
+  static bool _checkedAvailability = false;
+
+  /// Check if Health Connect (Android) or HealthKit (iOS) is available.
+  static Future<bool> isAvailable() async {
+    if (_checkedAvailability) return _available;
+    _checkedAvailability = true;
+
+    try {
+      if (Platform.isAndroid) {
+        final status = await _health.getHealthConnectSdkStatus();
+        _available = status == HealthConnectSdkStatus.sdkAvailable;
+        if (!_available) {
+          debugPrint('Health Connect not available. Status: $status');
+          debugPrint('Health Connect may need to be installed from Play Store.');
+        }
+      } else {
+        // HealthKit is always available on iOS
+        _available = true;
+      }
+    } catch (e) {
+      debugPrint('Error checking health availability: $e');
+      _available = false;
+    }
+
+    return _available;
+  }
 
   /// Request permission to read step data.
   static Future<bool> requestPermission() async {
-    final types = [HealthDataType.STEPS];
-    final permissions = [HealthDataAccess.READ];
+    if (!await isAvailable()) return false;
 
     try {
-      _authorized = await _health.requestAuthorization(types, permissions: permissions);
+      _authorized = await _health.requestAuthorization(
+        [HealthDataType.STEPS],
+        permissions: [HealthDataAccess.READ],
+      );
       return _authorized;
     } catch (e) {
       debugPrint('Health permission error: $e');
@@ -21,26 +51,35 @@ class HealthService {
 
   static bool get isAuthorized => _authorized;
 
-  /// Check if Health Connect / HealthKit is available.
-  static Future<bool> isAvailable() async {
+  /// Check if permissions are already granted (without prompting).
+  static Future<bool> hasPermissions() async {
+    if (!await isAvailable()) return false;
     try {
-      final status = await _health.getHealthConnectSdkStatus();
-      return status == HealthConnectSdkStatus.sdkAvailable;
-    } catch (_) {
-      // iOS doesn't have getHealthConnectSdkStatus, but HealthKit is always available
-      return true;
+      final result = await _health.hasPermissions(
+        [HealthDataType.STEPS],
+        permissions: [HealthDataAccess.READ],
+      );
+      _authorized = result ?? false;
+      return _authorized;
+    } catch (e) {
+      return false;
     }
   }
 
   /// Read step intervals from Health Connect/HealthKit.
-  /// Returns raw intervals with start, end, value, source.
   static Future<List<RawStepInterval>> getSteps({
     required DateTime from,
     required DateTime to,
   }) async {
+    if (!await isAvailable()) return [];
+
     if (!_authorized) {
-      final granted = await requestPermission();
-      if (!granted) return [];
+      // Check if already granted before prompting
+      final hasPerms = await hasPermissions();
+      if (!hasPerms) {
+        final granted = await requestPermission();
+        if (!granted) return [];
+      }
     }
 
     try {
