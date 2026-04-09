@@ -1,67 +1,48 @@
 import 'package:flutter/material.dart';
 import '../models/daily_steps.dart';
 import '../services/step_service.dart';
+import '../services/step_sync_service.dart';
 
 class StepsProvider extends ChangeNotifier {
-  final StepApiService _service;
+  final StepApiService _apiService;
+  final StepSyncService _syncService;
+
   DailySteps _today = DailySteps.empty();
   List<DailySteps> _history = [];
-  List<StepInterval> _intervals = [];
   bool _isLoading = false;
-  bool _hasLoadedToday = false;
+  bool _hasLoaded = false;
 
-  StepsProvider(this._service);
+  StepsProvider(this._apiService, this._syncService);
 
   DailySteps get today => _today;
   List<DailySteps> get history => _history;
-  List<StepInterval> get intervals => _intervals;
   bool get isLoading => _isLoading;
 
-  Future<void> loadToday() async {
-    if (!_hasLoadedToday) {
+  /// Main entry: sync with Health Connect + backend and refresh display.
+  Future<void> loadSteps({required bool isOnline}) async {
+    if (!_hasLoaded) {
       _isLoading = true;
       notifyListeners();
     }
     try {
-      _today = await _service.getToday();
-      _hasLoadedToday = true;
+      final displayData = await _syncService.syncAndGetDisplayData(isOnline: isOnline);
+      _history = displayData;
+      final todayStr = DateTime.now().toIso8601String().split('T')[0];
+      _today = displayData.firstWhere(
+        (d) => d.date == todayStr,
+        orElse: () => DailySteps.empty(),
+      );
+      _hasLoaded = true;
     } catch (e) {
-      debugPrint('Error loading today steps: $e');
+      debugPrint('Error loading steps: $e');
     }
     _isLoading = false;
     notifyListeners();
   }
 
-  Future<void> loadHistory(String from, String to) async {
-    try {
-      _history = await _service.getHistory(from, to);
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Error loading step history: $e');
-    }
-  }
-
-  Future<void> loadIntervals(String date) async {
-    try {
-      _intervals = await _service.getIntervals(date);
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Error loading step intervals: $e');
-    }
-  }
-
-  Future<void> syncSteps(List<StepInterval> intervals) async {
-    try {
-      await _service.syncSteps(intervals);
-      await loadToday();
-    } catch (e) {
-      debugPrint('Error syncing steps: $e');
-    }
-  }
-
   Future<void> updateGoal(int goal) async {
     try {
-      _today = await _service.updateGoal(goal);
+      _today = await _apiService.updateGoal(goal);
       notifyListeners();
     } catch (e) {
       debugPrint('Error updating goal: $e');

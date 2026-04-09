@@ -4,6 +4,7 @@ import 'statistics.dart';
 import 'dart:ui';
 import 'package:trackon_mobile/data/providers/steps_provider.dart';
 import 'package:trackon_mobile/data/providers/fitness_provider.dart';
+import 'package:trackon_mobile/data/providers/connectivity_provider.dart';
 import 'package:trackon_mobile/data/models/workout.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/notifications_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/profile_page.dart';
@@ -21,7 +22,8 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<StepsProvider>().loadToday();
+      final isOnline = context.read<ConnectivityProvider>().isOnline;
+      context.read<StepsProvider>().loadSteps(isOnline: isOnline);
       context.read<FitnessProvider>().loadPlannedWorkouts();
     });
   }

@@ -9,6 +9,7 @@ import 'data/providers/fitness_provider.dart';
 import 'data/providers/groups_provider.dart';
 import 'data/providers/notification_provider.dart';
 import 'data/services/step_service.dart';
+import 'data/services/step_sync_service.dart';
 import 'data/services/activity_service.dart';
 import 'data/services/workout_service.dart';
 import 'data/services/friendship_service.dart';
@@ -31,7 +32,10 @@ void main() {
       providers: [
         ChangeNotifierProvider.value(value: connectivityProvider),
         ChangeNotifierProvider(create: (_) => AuthProvider(apiClient)),
-        ChangeNotifierProvider(create: (_) => StepsProvider(StepApiService(apiClient))),
+        ChangeNotifierProvider(create: (_) {
+          final stepApi = StepApiService(apiClient);
+          return StepsProvider(stepApi, StepSyncService(stepApi, apiClient));
+        }),
         ChangeNotifierProvider(create: (_) => ActivityProvider(ActivityApiService(apiClient))),
         ChangeNotifierProvider(
           create: (_) => FitnessProvider(
