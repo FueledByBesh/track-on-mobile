@@ -1,29 +1,21 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:health/health.dart';
+import 'package:flutter/services.dart';
 
 class HealthService {
-  static final Health _health = Health();
+  static const _channel = MethodChannel('com.trackon/health');
   static bool _authorized = false;
   static bool _available = false;
   static bool _checkedAvailability = false;
 
-  /// Check if Health Connect (Android) or HealthKit (iOS) is available.
+  /// Check if Health Connect is available on the device.
   static Future<bool> isAvailable() async {
     if (_checkedAvailability) return _available;
     _checkedAvailability = true;
 
     try {
-      if (Platform.isAndroid) {
-        final status = await _health.getHealthConnectSdkStatus();
-        _available = status == HealthConnectSdkStatus.sdkAvailable;
-        if (!_available) {
-          debugPrint('Health Connect not available. Status: $status');
-          debugPrint('Health Connect may need to be installed from Play Store.');
-        }
-      } else {
-        // HealthKit is always available on iOS
-        _available = true;
+      _available = await _channel.invokeMethod<bool>('isAvailable') ?? false;
+      if (!_available) {
+        debugPrint('Health Connect not available on this device.');
       }
     } catch (e) {
       debugPrint('Error checking health availability: $e');
@@ -38,10 +30,7 @@ class HealthService {
     if (!await isAvailable()) return false;
 
     try {
-      _authorized = await _health.requestAuthorization(
-        [HealthDataType.STEPS],
-        permissions: [HealthDataAccess.READ],
-      );
+      _authorized = await _channel.invokeMethod<bool>('requestPermission') ?? false;
       return _authorized;
     } catch (e) {
       debugPrint('Health permission error: $e');
@@ -55,18 +44,15 @@ class HealthService {
   static Future<bool> hasPermissions() async {
     if (!await isAvailable()) return false;
     try {
-      final result = await _health.hasPermissions(
-        [HealthDataType.STEPS],
-        permissions: [HealthDataAccess.READ],
-      );
-      _authorized = result ?? false;
+      _authorized = await _channel.invokeMethod<bool>('hasPermission') ?? false;
       return _authorized;
     } catch (e) {
       return false;
     }
   }
 
-  /// Read step intervals from Health Connect/HealthKit.
+  /// Read step intervals from Health Connect.
+  /// Returns raw intervals with original timezone info from the native side.
   static Future<List<RawStepInterval>> getSteps({
     required DateTime from,
     required DateTime to,
@@ -74,7 +60,6 @@ class HealthService {
     if (!await isAvailable()) return [];
 
     if (!_authorized) {
-      // Check if already granted before prompting
       final hasPerms = await hasPermissions();
       if (!hasPerms) {
         final granted = await requestPermission();
@@ -83,21 +68,23 @@ class HealthService {
     }
 
     try {
-      final dataPoints = await _health.getHealthDataFromTypes(
-        types: [HealthDataType.STEPS],
-        startTime: from,
-        endTime: to,
-      );
+      final result = await _channel.invokeMethod<List<dynamic>>('getSteps', {
+        'from': from.toUtc().toIso8601String(),
+        'to': to.toUtc().toIso8601String(),
+      });
 
-      return dataPoints.map((dp) {
-        final steps = dp.value is NumericHealthValue
-            ? (dp.value as NumericHealthValue).numericValue.toInt()
-            : 0;
+      if (result == null) return [];
+
+      return result.map((item) {
+        final map = Map<String, dynamic>.from(item as Map);
         return RawStepInterval(
-          startTime: dp.dateFrom,
-          endTime: dp.dateTo,
-          stepsValue: steps,
-          source: dp.sourceName,
+          startTime: map['startTime'] as String,
+          endTime: map['endTime'] as String,
+          startTimeLocal: map['startTimeLocal'] as String,
+          endTimeLocal: map['endTimeLocal'] as String,
+          date: map['date'] as String,
+          stepsValue: map['stepsValue'] as int,
+          source: map['source'] as String,
         );
       }).toList();
     } catch (e) {
@@ -108,17 +95,26 @@ class HealthService {
 }
 
 class RawStepInterval {
-  final DateTime startTime;
-  final DateTime endTime;
+  /// UTC timestamp
+  final String startTime;
+  /// UTC timestamp
+  final String endTime;
+  /// Local timestamp with original timezone offset
+  final String startTimeLocal;
+  /// Local timestamp with original timezone offset
+  final String endTimeLocal;
+  /// Date in user's local timezone (YYYY-MM-DD)
+  final String date;
   final int stepsValue;
   final String source;
 
   RawStepInterval({
     required this.startTime,
     required this.endTime,
+    required this.startTimeLocal,
+    required this.endTimeLocal,
+    required this.date,
     required this.stepsValue,
     required this.source,
   });
-
-  String get date => startTime.toIso8601String().split('T')[0];
 }

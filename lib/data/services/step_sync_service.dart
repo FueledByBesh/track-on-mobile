@@ -44,8 +44,8 @@ class StepSyncService {
     // 4. Save raw intervals to local DB (safety net)
     for (final interval in rawIntervals) {
       await StepDatabase.insertRaw(
-        startTime: interval.startTime.toUtc().toIso8601String(),
-        endTime: interval.endTime.toUtc().toIso8601String(),
+        startTime: interval.startTime,
+        endTime: interval.endTime,
         stepsValue: interval.stepsValue,
         date: interval.date,
         source: interval.source,
@@ -136,8 +136,8 @@ class StepSyncService {
     // 4. Save raw to local DB
     for (final interval in newRaw) {
       await StepDatabase.insertRaw(
-        startTime: interval.startTime.toUtc().toIso8601String(),
-        endTime: interval.endTime.toUtc().toIso8601String(),
+        startTime: interval.startTime,
+        endTime: interval.endTime,
         stepsValue: interval.stepsValue,
         date: interval.date,
         source: interval.source,
