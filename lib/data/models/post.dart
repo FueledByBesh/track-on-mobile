@@ -30,17 +30,17 @@ class Post {
   factory Post.fromJson(Map<String, dynamic> json) {
     return Post(
       id: json['id'],
-      authorName: json['authorName'] ?? '',
-      authorEmail: json['authorEmail'] ?? '',
-      clubId: json['clubId'],
-      clubName: json['clubName'],
+      authorName: json['author_name'] ?? '',
+      authorEmail: json['author_email'] ?? '',
+      clubId: json['club_id'],
+      clubName: json['club_name'],
       content: json['content'] ?? '',
-      imageUrl: json['imageUrl'],
+      imageUrl: json['image_url'],
       likes: json['likes'] ?? 0,
       dislikes: json['dislikes'] ?? 0,
-      commentCount: json['commentCount'] ?? 0,
-      userLiked: json['userLiked'],
-      createdAt: json['createdAt'] ?? '',
+      commentCount: json['comment_count'] ?? 0,
+      userLiked: json['user_liked'],
+      createdAt: json['created_at'] ?? '',
     );
   }
 }
@@ -63,10 +63,10 @@ class Comment {
   factory Comment.fromJson(Map<String, dynamic> json) {
     return Comment(
       id: json['id'],
-      authorName: json['authorName'] ?? '',
-      authorEmail: json['authorEmail'] ?? '',
+      authorName: json['author_name'] ?? '',
+      authorEmail: json['author_email'] ?? '',
       content: json['content'] ?? '',
-      createdAt: json['createdAt'] ?? '',
+      createdAt: json['created_at'] ?? '',
     );
   }
 }

@@ -35,32 +35,41 @@ class StepSyncService {
     DateTime? lastBackendSync = await _getLastBackendSync(isOnline: true);
 
     // 2. Determine the range to read from Health Connect
-    final now = DateTime.now();
-    final from = lastBackendSync ?? now.subtract(const Duration(days: 7));
+    final from =
+        lastBackendSync ??
+        DateTime.now().toUtc().subtract(const Duration(days: 30));
 
     // 3. Read raw intervals from Health Connect
-    final rawIntervals = await HealthService.getSteps(from: from, to: now);
+    final rawIntervals = await HealthService.getSteps(since: from);
 
     // 4. Save raw intervals to local DB (safety net)
     for (final interval in rawIntervals) {
       await StepDatabase.insertRaw(
-        startTime: interval.startTime,
-        endTime: interval.endTime,
+        startTimeUtc: interval.startTime,
+        startTimeLocal: interval.startTimeLocal,
+        endTimeUtc: interval.endTime,
+        endTimeLocal: interval.endTimeLocal,
         stepsValue: interval.stepsValue,
         date: interval.date,
         source: interval.source,
       );
     }
 
+    String rangeEnd = DateTime.now().toUtc().toIso8601String();
     // 5. Send raw data to backend
     try {
       final unsyncedRaw = await _getUnsyncedRaw();
       if (unsyncedRaw.isNotEmpty) {
-        await _api.syncSteps(unsyncedRaw);
+        await _api.syncSteps(
+          unsyncedRaw,
+          rangeStart: from.toUtc().toIso8601String(),
+          rangeEnd: rangeEnd,
+        );
       }
 
       // 6. Reconcile untrusted data with backend
       //    Fetch from earliest untrusted date to overwrite local dedup values
+      DateTime now = DateTime.now().toLocal();
       final today = now.toIso8601String().split('T')[0];
       final weekAgo = now
           .subtract(const Duration(days: 7))
@@ -75,26 +84,22 @@ class StepSyncService {
 
       // 7. Cache trusted display data
       for (final day in trustedData) {
+        var today = DateTime.now().toLocal().toIso8601String().split('T')[0];
         await StepDatabase.upsertDisplay(
           date: day.date,
           stepCount: day.stepCount,
           distanceKm: day.distanceKm,
           calories: day.caloriesBurned,
           goal: day.goal,
-          trusted: true,
+          // Mark as trusted if it's not today (today's data can still change as we get more intervals)
+          trusted: day.date.compareTo(today) != 0,
         );
       }
 
       // 8. Update sync timestamps, clean up raw data, trim old display cache
-      await StepDatabase.setMeta(
-        StepDatabase.keyLastBackendSync,
-        now.toUtc().toIso8601String(),
-      );
-      await StepDatabase.setMeta(
-        StepDatabase.keyLastMobileDedup,
-        now.toUtc().toIso8601String(),
-      );
-      await StepDatabase.deleteRawBefore(now.toUtc().toIso8601String());
+      await StepDatabase.setMeta(StepDatabase.keyLastBackendSync, rangeEnd);
+      await StepDatabase.setMeta(StepDatabase.keyLastMobileDedup, rangeEnd);
+      await StepDatabase.deleteRawBefore(rangeEnd);
       final cutoff = now
           .subtract(const Duration(days: 30))
           .toIso8601String()
@@ -114,14 +119,8 @@ class StepSyncService {
   // ============ OFFLINE FLOW ============
 
   Future<List<DailySteps>> _offlineFlow() async {
-    final now = DateTime.now();
+    final now = DateTime.now().toUtc();
 
-    // 1. Get cached trusted display data from local DB
-    final weekAgo = now
-        .subtract(const Duration(days: 7))
-        .toIso8601String()
-        .split('T')[0];
-    final today = now.toIso8601String().split('T')[0];
     // 1. Determine what needs fresh dedup
     final lastDedupStr = await StepDatabase.getMeta(
       StepDatabase.keyLastMobileDedup,
@@ -131,13 +130,15 @@ class StepSyncService {
         : now.subtract(const Duration(days: 7));
 
     // 3. Read new data from Health Connect since last dedup
-    final newRaw = await HealthService.getSteps(from: lastDedup, to: now);
+    final newRaw = await HealthService.getSteps(since: lastDedup);
 
     // 4. Save raw to local DB
     for (final interval in newRaw) {
       await StepDatabase.insertRaw(
-        startTime: interval.startTime,
-        endTime: interval.endTime,
+        startTimeUtc: interval.startTime,
+        startTimeLocal: interval.startTimeLocal,
+        endTimeUtc: interval.endTime,
+        endTimeLocal: interval.endTimeLocal,
         stepsValue: interval.stepsValue,
         date: interval.date,
         source: interval.source,
@@ -186,10 +187,16 @@ class StepSyncService {
     // 6. Update last mobile dedup
     await StepDatabase.setMeta(
       StepDatabase.keyLastMobileDedup,
-      now.toUtc().toIso8601String(),
+      now.toUtc().subtract(Duration(seconds: 30)).toIso8601String(),
     );
 
     // 7. Return all display data for the week
+    DateTime localNow = DateTime.now().toLocal();
+    final today = localNow.toIso8601String().split('T')[0];
+    final weekAgo = localNow
+        .subtract(const Duration(days: 7))
+        .toIso8601String()
+        .split('T')[0];
     final allRows = await StepDatabase.getDisplayRange(weekAgo, today);
     return allRows.map(_rowToDisplay).toList();
   }
@@ -230,8 +237,8 @@ class StepSyncService {
     if (isOnline) {
       try {
         final response = await _apiClient.dio.get('/api/steps/last-sync');
-        if (response.data['hasData'] == true) {
-          return DateTime.parse(response.data['lastSync']);
+        if (response.data['has_data'] == true) {
+          return DateTime.parse(response.data['last_sync']);
         }
         // Backend explicitly says no data — return null regardless of local cache
         return null;
@@ -250,15 +257,17 @@ class StepSyncService {
     final since =
         lastSyncStr ??
         DateTime.now()
-            .subtract(const Duration(days: 30))
             .toUtc()
+            .subtract(const Duration(days: 30))
             .toIso8601String();
     final rows = await StepDatabase.getRawSince(since);
     return rows
         .map(
           (r) => StepInterval(
-            start: r['start_time'] as String,
-            end: r['end_time'] as String,
+            startUtc: r['start_time_utc'] as String,
+            startLocal: r['start_time_local'] as String,
+            endUtc: r['end_time_utc'] as String,
+            endLocal: r['end_time_local'] as String,
             stepsValue: r['steps_value'] as int,
             date: r['date'] as String,
             source: r['source'] as String?,

@@ -79,18 +79,18 @@ class PlannedWorkoutApiService {
     int? customReps,
   }) async {
     final response = await _api.dio.post('/api/planned-workouts', data: {
-      'workoutId': workoutId,
-      'plannedDate': plannedDate,
-      if (customSets != null) 'customSets': customSets,
-      if (customReps != null) 'customReps': customReps,
+      'workout_id': workoutId,
+      'planned_date': plannedDate,
+      if (customSets != null) 'custom_sets': customSets,
+      if (customReps != null) 'custom_reps': customReps,
     });
     return PlannedWorkout.fromJson(response.data);
   }
 
   Future<PlannedWorkout> updateWorkout(String id, {int? customSets, int? customReps, bool? completed}) async {
     final response = await _api.dio.put('/api/planned-workouts/$id', data: {
-      if (customSets != null) 'customSets': customSets,
-      if (customReps != null) 'customReps': customReps,
+      if (customSets != null) 'custom_sets': customSets,
+      if (customReps != null) 'custom_reps': customReps,
       if (completed != null) 'completed': completed,
     });
     return PlannedWorkout.fromJson(response.data);
@@ -102,8 +102,8 @@ class PlannedWorkoutApiService {
 
   Future<List<PlannedWorkout>> addProgramToDay(String programId, String plannedDate) async {
     final response = await _api.dio.post('/api/planned-workouts/program', data: {
-      'programId': programId,
-      'plannedDate': plannedDate,
+      'program_id': programId,
+      'planned_date': plannedDate,
     });
     return (response.data as List).map((e) => PlannedWorkout.fromJson(e)).toList();
   }

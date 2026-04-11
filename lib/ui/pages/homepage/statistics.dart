@@ -605,8 +605,7 @@ class StatsItem extends StatelessWidget {
                           return const SizedBox.shrink();
                         }
                         return SideTitleWidget(
-                          axisSide: meta.axisSide,
-                          fitInside: SideTitleFitInsideData.fromTitleMeta(meta),
+                          meta: meta,
                           child: Text(
                             days[i],
                             style: const TextStyle(fontSize: 10),

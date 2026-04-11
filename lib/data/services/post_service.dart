@@ -9,8 +9,8 @@ class PostApiService {
   Future<Post> create({required String content, String? imageUrl, String? clubId}) async {
     final response = await _api.dio.post('/api/posts', data: {
       'content': content,
-      'imageUrl': imageUrl,
-      'clubId': clubId,
+      'image_url': imageUrl,
+      'club_id': clubId,
     });
     return Post.fromJson(response.data);
   }
@@ -44,7 +44,7 @@ class PostApiService {
 
   Future<Post> toggleLike(String postId, bool isLike) async {
     final response = await _api.dio.post('/api/posts/$postId/like', data: {
-      'isLike': isLike,
+      'is_like': isLike,
     });
     return Post.fromJson(response.data);
   }

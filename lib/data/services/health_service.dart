@@ -30,7 +30,8 @@ class HealthService {
     if (!await isAvailable()) return false;
 
     try {
-      _authorized = await _channel.invokeMethod<bool>('requestPermission') ?? false;
+      _authorized =
+          await _channel.invokeMethod<bool>('requestPermission') ?? false;
       return _authorized;
     } catch (e) {
       debugPrint('Health permission error: $e');
@@ -54,8 +55,7 @@ class HealthService {
   /// Read step intervals from Health Connect.
   /// Returns raw intervals with original timezone info from the native side.
   static Future<List<RawStepInterval>> getSteps({
-    required DateTime from,
-    required DateTime to,
+    required DateTime since,
   }) async {
     if (!await isAvailable()) return [];
 
@@ -69,8 +69,7 @@ class HealthService {
 
     try {
       final result = await _channel.invokeMethod<List<dynamic>>('getSteps', {
-        'from': from.toUtc().toIso8601String(),
-        'to': to.toUtc().toIso8601String(),
+        'since': since.toUtc().toIso8601String(),
       });
 
       if (result == null) return [];
@@ -97,12 +96,16 @@ class HealthService {
 class RawStepInterval {
   /// UTC timestamp
   final String startTime;
+
   /// UTC timestamp
   final String endTime;
+
   /// Local timestamp with original timezone offset
   final String startTimeLocal;
+
   /// Local timestamp with original timezone offset
   final String endTimeLocal;
+
   /// Date in user's local timezone (YYYY-MM-DD)
   final String date;
   final int stepsValue;

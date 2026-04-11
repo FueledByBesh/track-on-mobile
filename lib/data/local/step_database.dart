@@ -30,8 +30,10 @@ class StepDatabase {
         await db.execute('''
           CREATE TABLE steps_raw (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            start_time TEXT NOT NULL,
-            end_time TEXT NOT NULL,
+            start_time_utc TEXT NOT NULL,
+            end_time_utc TEXT NOT NULL,
+            start_time_local TEXT NOT NULL,
+            end_time_local TEXT NOT NULL,
             steps_value INTEGER NOT NULL,
             date TEXT NOT NULL,
             source TEXT
@@ -41,7 +43,7 @@ class StepDatabase {
         // Unique constraint to avoid duplicate raw intervals
         await db.execute('''
           CREATE UNIQUE INDEX idx_raw_unique
-          ON steps_raw (start_time, end_time)
+          ON steps_raw (start_time_utc, end_time_utc)
         ''');
 
         await db.execute('''
@@ -77,11 +79,18 @@ class StepDatabase {
 
   static Future<Map<String, dynamic>?> getDisplay(String date) async {
     final db = await database;
-    final rows = await db.query('steps_display', where: 'date = ?', whereArgs: [date]);
+    final rows = await db.query(
+      'steps_display',
+      where: 'date = ?',
+      whereArgs: [date],
+    );
     return rows.isEmpty ? null : rows.first;
   }
 
-  static Future<List<Map<String, dynamic>>> getDisplayRange(String fromDate, String toDate) async {
+  static Future<List<Map<String, dynamic>>> getDisplayRange(
+    String fromDate,
+    String toDate,
+  ) async {
     final db = await database;
     return db.query(
       'steps_display',
@@ -110,61 +119,86 @@ class StepDatabase {
 
   static Future<void> deleteDisplayBefore(String beforeDate) async {
     final db = await database;
-    await db.delete('steps_display', where: 'date < ?', whereArgs: [beforeDate]);
+    await db.delete(
+      'steps_display',
+      where: 'date < ?',
+      whereArgs: [beforeDate],
+    );
   }
 
   // ============ RAW DATA ============
 
   static Future<void> insertRaw({
-    required String startTime,
-    required String endTime,
+    required String startTimeUtc,
+    required String endTimeUtc,
+    required String startTimeLocal,
+    required String endTimeLocal,
     required int stepsValue,
     required String date,
     String? source,
   }) async {
     final db = await database;
     await db.insert('steps_raw', {
-      'start_time': startTime,
-      'end_time': endTime,
+      'start_time_utc': startTimeUtc,
+      'end_time_utc': endTimeUtc,
+      'start_time_local': startTimeLocal,
+      'end_time_local': endTimeLocal,
       'steps_value': stepsValue,
       'date': date,
       'source': source,
     }, conflictAlgorithm: ConflictAlgorithm.ignore); // skip duplicates
   }
 
-  static Future<List<Map<String, dynamic>>> getRawSince(String sinceTimestamp) async {
+  static Future<List<Map<String, dynamic>>> getRawSince(
+    String sinceTimestamp,
+  ) async {
     final db = await database;
     return db.query(
       'steps_raw',
-      where: 'start_time >= ?',
+      where: 'start_time_utc >= ?',
       whereArgs: [sinceTimestamp],
-      orderBy: 'start_time ASC',
+      orderBy: 'start_time_utc ASC',
     );
   }
 
   static Future<List<Map<String, dynamic>>> getRawForDate(String date) async {
     final db = await database;
-    return db.query('steps_raw', where: 'date = ?', whereArgs: [date], orderBy: 'start_time ASC');
+    return db.query(
+      'steps_raw',
+      where: 'date = ?',
+      whereArgs: [date],
+      orderBy: 'start_time ASC',
+    );
   }
 
   /// Delete raw data that's been successfully synced to backend.
   static Future<void> deleteRawBefore(String beforeTimestamp) async {
     final db = await database;
-    await db.delete('steps_raw', where: 'end_time < ?', whereArgs: [beforeTimestamp]);
+    await db.delete(
+      'steps_raw',
+      where: 'end_time_utc < ?',
+      whereArgs: [beforeTimestamp],
+    );
   }
 
   // ============ SYNC METADATA ============
 
   static Future<String?> getMeta(String key) async {
     final db = await database;
-    final rows = await db.query('sync_metadata', where: 'key = ?', whereArgs: [key]);
+    final rows = await db.query(
+      'sync_metadata',
+      where: 'key = ?',
+      whereArgs: [key],
+    );
     return rows.isEmpty ? null : rows.first['value'] as String;
   }
 
   static Future<void> setMeta(String key, String value) async {
     final db = await database;
-    await db.insert('sync_metadata', {'key': key, 'value': value},
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert('sync_metadata', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   static const String keyLastBackendSync = 'last_backend_sync';

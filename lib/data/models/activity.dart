@@ -24,13 +24,13 @@ class Activity {
   factory Activity.fromJson(Map<String, dynamic> json) {
     return Activity(
       id: json['id'],
-      activityType: json['activityType'] ?? 'RUNNING',
+      activityType: json['activity_type'] ?? 'RUNNING',
       status: json['status'] ?? 'IN_PROGRESS',
-      startTime: json['startTime'] ?? '',
-      endTime: json['endTime'],
-      distanceKm: (json['distanceKm'] ?? 0).toDouble(),
-      avgPaceMinPerKm: json['avgPaceMinPerKm']?.toDouble(),
-      durationSeconds: json['durationSeconds'],
+      startTime: json['start_time'] ?? '',
+      endTime: json['end_time'],
+      distanceKm: (json['distance_km'] ?? 0).toDouble(),
+      avgPaceMinPerKm: json['avg_pace_min_per_km']?.toDouble(),
+      durationSeconds: json['duration_seconds'],
       route: (json['route'] as List<dynamic>?)
               ?.map((e) => LocationPointData.fromJson(e))
               .toList() ??
@@ -81,13 +81,13 @@ class ActivitySummary {
   factory ActivitySummary.fromJson(Map<String, dynamic> json) {
     return ActivitySummary(
       id: json['id'],
-      activityType: json['activityType'] ?? 'RUNNING',
+      activityType: json['activity_type'] ?? 'RUNNING',
       status: json['status'] ?? 'COMPLETED',
-      startTime: json['startTime'] ?? '',
-      endTime: json['endTime'],
-      distanceKm: (json['distanceKm'] ?? 0).toDouble(),
-      avgPaceMinPerKm: json['avgPaceMinPerKm']?.toDouble(),
-      durationSeconds: json['durationSeconds'],
+      startTime: json['start_time'] ?? '',
+      endTime: json['end_time'],
+      distanceKm: (json['distance_km'] ?? 0).toDouble(),
+      avgPaceMinPerKm: json['avg_pace_min_per_km']?.toDouble(),
+      durationSeconds: json['duration_seconds'],
     );
   }
 }
@@ -110,7 +110,7 @@ class LocationPointData {
       latitude: (json['latitude'] ?? 0).toDouble(),
       longitude: (json['longitude'] ?? 0).toDouble(),
       altitude: json['altitude']?.toDouble(),
-      recordedAt: json['recordedAt'],
+      recordedAt: json['recorded_at'],
     );
   }
 

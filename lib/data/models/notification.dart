@@ -18,8 +18,8 @@ class AppNotification {
       id: json['id'],
       title: json['title'] ?? '',
       description: json['description'],
-      markedAsRead: json['markedAsRead'] ?? false,
-      createdAt: json['createdAt'] ?? '',
+      markedAsRead: json['marked_as_read'] ?? false,
+      createdAt: json['created_at'] ?? '',
     );
   }
 }

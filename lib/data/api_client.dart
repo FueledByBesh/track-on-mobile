@@ -113,13 +113,13 @@ class ApiClient {
 
       final response = await _refreshDio.post(
         '/auth/refresh',
-        data: {'refreshToken': refreshToken},
+        data: {'refresh_token': refreshToken},
       );
 
       if (response.statusCode == 200) {
         await saveTokens(
-          response.data['accessToken'],
-          response.data['refreshToken'],
+          response.data['access_token'],
+          response.data['refresh_token'],
         );
         _refreshCompleter!.complete(true);
         return true;

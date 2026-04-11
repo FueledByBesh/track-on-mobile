@@ -47,9 +47,8 @@ class HealthConnectChannel(private val activity: ComponentActivity) {
             "requestPermission" -> requestPermission(result)
             "hasPermission" -> hasPermission(result)
             "getSteps" -> {
-                val from = call.argument<String>("from")!!
-                val to = call.argument<String>("to")!!
-                getSteps(from, to, result)
+                val since = call.argument<String>("since")!!
+                getSteps(since, result)
             }
             else -> result.notImplemented()
         }
@@ -88,7 +87,7 @@ class HealthConnectChannel(private val activity: ComponentActivity) {
         }
     }
 
-    private fun getSteps(fromStr: String, toStr: String, result: MethodChannel.Result) {
+    private fun getSteps(sinceStr: String, result: MethodChannel.Result) {
         val status = HealthConnectClient.getSdkStatus(activity)
         if (status != HealthConnectClient.SDK_AVAILABLE) {
             result.success(emptyList<Map<String, Any>>())
@@ -98,12 +97,11 @@ class HealthConnectChannel(private val activity: ComponentActivity) {
         scope.launch {
             try {
                 val client = HealthConnectClient.getOrCreate(activity)
-                val from = Instant.parse(fromStr)
-                val to = Instant.parse(toStr)
+                val since = Instant.parse(sinceStr)
 
                 val request = ReadRecordsRequest(
                     recordType = StepsRecord::class,
-                    timeRangeFilter = TimeRangeFilter.between(from, to)
+                    timeRangeFilter = TimeRangeFilter.after(since)
                 )
 
                 val response = client.readRecords(request)

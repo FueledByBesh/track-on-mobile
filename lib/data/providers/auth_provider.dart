@@ -35,7 +35,7 @@ class AuthProvider extends ChangeNotifier {
     final hasTokens = await ApiClient.hasTokens();
     if (hasTokens) {
       try {
-        await _api.dio.get('/api/steps/today');
+        await _api.dio.get('/api/steps/last-sync');
         _isLoggedIn = true;
       } catch (_) {
         // Both access and refresh tokens are invalid/expired
@@ -89,8 +89,8 @@ class AuthProvider extends ChangeNotifier {
       final tokens = await _pollForTokens(state);
       if (tokens != null) {
         await ApiClient.saveTokens(
-          tokens['accessToken']!,
-          tokens['refreshToken']!,
+          tokens['access_token']!,
+          tokens['refresh_token']!,
         );
         _isLoggedIn = true;
         _isLoading = false;
@@ -128,10 +128,10 @@ class AuthProvider extends ChangeNotifier {
           queryParameters: {'state': state},
         );
         if (response.statusCode == 200 &&
-            response.data['accessToken'] != null) {
+            response.data['access_token'] != null) {
           return {
-            'accessToken': response.data['accessToken'] as String,
-            'refreshToken': response.data['refreshToken'] as String,
+            'access_token': response.data['access_token'] as String,
+            'refresh_token': response.data['refresh_token'] as String,
           };
         }
         // 202 = still pending, continue polling

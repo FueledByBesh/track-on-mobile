@@ -20,8 +20,8 @@ class UserProfile {
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
       id: json['id'] ?? '',
-      firstName: json['firstName'] ?? json['given_name'] ?? json['name'] ?? '',
-      lastName: json['lastName'] ?? json['family_name'] ?? '',
+      firstName: json['first_name'] ?? json['given_name'] ?? json['name'] ?? '',
+      lastName: json['last_name'] ?? json['family_name'] ?? '',
       email: json['email'] ?? '',
       picture: json['picture'],
       role: json['role'] ?? 'USER',
@@ -47,8 +47,8 @@ class UserSearchResult {
   factory UserSearchResult.fromJson(Map<String, dynamic> json) {
     return UserSearchResult(
       id: json['id'],
-      firstName: json['firstName'] ?? '',
-      lastName: json['lastName'] ?? '',
+      firstName: json['first_name'] ?? '',
+      lastName: json['last_name'] ?? '',
       email: json['email'] ?? '',
     );
   }

@@ -22,10 +22,10 @@ class Club {
       id: json['id'],
       name: json['name'] ?? '',
       description: json['description'],
-      createdByName: json['createdByName'] ?? '',
-      memberCount: json['memberCount'] ?? 0,
-      isMember: json['isMember'] ?? false,
-      createdAt: json['createdAt'] ?? '',
+      createdByName: json['created_by_name'] ?? '',
+      memberCount: json['member_count'] ?? 0,
+      isMember: json['is_member'] ?? false,
+      createdAt: json['created_at'] ?? '',
     );
   }
 }
@@ -47,11 +47,11 @@ class ClubMember {
 
   factory ClubMember.fromJson(Map<String, dynamic> json) {
     return ClubMember(
-      userId: json['userId'],
+      userId: json['user_id'],
       name: json['name'] ?? '',
       email: json['email'] ?? '',
       role: json['role'] ?? 'MEMBER',
-      joinedAt: json['joinedAt'] ?? '',
+      joinedAt: json['joined_at'] ?? '',
     );
   }
 }
@@ -86,16 +86,16 @@ class Challenge {
   factory Challenge.fromJson(Map<String, dynamic> json) {
     return Challenge(
       id: json['id'],
-      clubId: json['clubId'],
+      clubId: json['club_id'],
       title: json['title'] ?? '',
       description: json['description'],
-      targetType: json['targetType'] ?? 'STEPS',
-      targetValue: (json['targetValue'] ?? 0).toDouble(),
-      startDate: json['startDate'] ?? '',
-      endDate: json['endDate'] ?? '',
-      subscriberCount: json['subscriberCount'] ?? 0,
-      isSubscribed: json['isSubscribed'] ?? false,
-      userProgress: json['userProgress']?.toDouble(),
+      targetType: json['target_type'] ?? 'STEPS',
+      targetValue: (json['target_value'] ?? 0).toDouble(),
+      startDate: json['start_date'] ?? '',
+      endDate: json['end_date'] ?? '',
+      subscriberCount: json['subscriber_count'] ?? 0,
+      isSubscribed: json['is_subscribed'] ?? false,
+      userProgress: json['user_progress']?.toDouble(),
     );
   }
 }

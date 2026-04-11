@@ -19,13 +19,13 @@ class Friendship {
 
   factory Friendship.fromJson(Map<String, dynamic> json) {
     return Friendship(
-      friendshipId: json['friendshipId'],
-      friendId: json['friendId'],
-      friendName: json['friendName'] ?? '',
-      friendEmail: json['friendEmail'] ?? '',
+      friendshipId: json['friendship_id'],
+      friendId: json['friend_id'],
+      friendName: json['friend_name'] ?? '',
+      friendEmail: json['friend_email'] ?? '',
       status: json['status'] ?? '',
       direction: json['direction'] ?? '',
-      createdAt: json['createdAt'] ?? '',
+      createdAt: json['created_at'] ?? '',
     );
   }
 }
@@ -53,14 +53,14 @@ class FriendSteps {
 
   factory FriendSteps.fromJson(Map<String, dynamic> json) {
     return FriendSteps(
-      friendId: json['friendId'],
-      friendName: json['friendName'] ?? '',
-      friendEmail: json['friendEmail'] ?? '',
+      friendId: json['friend_id'],
+      friendName: json['friend_name'] ?? '',
+      friendEmail: json['friend_email'] ?? '',
       date: json['date'] ?? '',
-      stepCount: json['stepCount'] ?? 0,
+      stepCount: json['step_count'] ?? 0,
       goal: json['goal'] ?? 10000,
-      progressPercent: (json['progressPercent'] ?? 0).toDouble(),
-      distanceKm: (json['distanceKm'] ?? 0).toDouble(),
+      progressPercent: (json['progress_percent'] ?? 0).toDouble(),
+      distanceKm: (json['distance_km'] ?? 0).toDouble(),
     );
   }
 }

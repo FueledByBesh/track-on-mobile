@@ -23,12 +23,12 @@ class DailySteps {
     return DailySteps(
       id: json['id'],
       date: json['date'] ?? '',
-      stepCount: json['stepCount'] ?? 0,
+      stepCount: json['step_count'] ?? 0,
       goal: json['goal'] ?? 10000,
-      progressPercent: (json['progressPercent'] ?? 0).toDouble(),
-      distanceKm: (json['distanceKm'] ?? 0).toDouble(),
-      caloriesBurned: (json['caloriesBurned'] ?? 0).toDouble(),
-      lastUpdated: json['lastUpdated'],
+      progressPercent: (json['progress_percent'] ?? 0).toDouble(),
+      distanceKm: (json['distance_km'] ?? 0).toDouble(),
+      caloriesBurned: (json['calories_burned'] ?? 0).toDouble(),
+      lastUpdated: json['last_updated'],
     );
   }
 
@@ -46,16 +46,20 @@ class DailySteps {
 
 class StepInterval {
   final String? id;
-  final String start;
-  final String end;
+  final String startUtc;
+  final String endUtc;
+  final String startLocal;
+  final String endLocal;
   final int stepsValue;
   final String date;
   final String? source;
 
   StepInterval({
     this.id,
-    required this.start,
-    required this.end,
+    required this.startUtc,
+    required this.startLocal,
+    required this.endUtc,
+    required this.endLocal,
     required this.stepsValue,
     required this.date,
     this.source,
@@ -64,19 +68,22 @@ class StepInterval {
   factory StepInterval.fromJson(Map<String, dynamic> json) {
     return StepInterval(
       id: json['id'],
-      start: json['start'] ?? '',
-      end: json['end'] ?? '',
-      stepsValue: json['stepsValue'] ?? 0,
+      startUtc: json['start_utc'] ?? '',
+      startLocal: json['start_local'] ?? '',
+      endUtc: json['end_utc'] ?? '',
+      endLocal: json['end_local'] ?? '',
+      stepsValue: json['steps_value'] ?? 0,
       date: json['date'] ?? '',
       source: json['source'],
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'start': start,
-    'end': end,
-    'stepsValue': stepsValue,
-    'date': date,
+    'start_utc': startUtc,
+    'end_utc': endUtc,
+    'start_local': startLocal,
+    'end_local': endLocal,
+    'steps_value': stepsValue,
     if (source != null) 'source': source,
   };
 }

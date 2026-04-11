@@ -19,10 +19,10 @@ class Workout {
     return Workout(
       id: json['id'],
       name: json['name'] ?? '',
-      workoutType: json['workoutType'] ?? '',
-      recommendedSets: json['recommendedSets'] ?? 3,
-      recommendedReps: json['recommendedReps'] ?? 10,
-      tutorialVideoUrl: json['tutorialVideoUrl'],
+      workoutType: json['workout_type'] ?? '',
+      recommendedSets: json['recommended_sets'] ?? 3,
+      recommendedReps: json['recommended_reps'] ?? 10,
+      tutorialVideoUrl: json['tutorial_video_url'],
     );
   }
 }
@@ -72,12 +72,12 @@ class ProgramWorkoutItem {
   factory ProgramWorkoutItem.fromJson(Map<String, dynamic> json) {
     return ProgramWorkoutItem(
       id: json['id'],
-      workoutId: json['workoutId'],
-      workoutName: json['workoutName'] ?? '',
-      workoutType: json['workoutType'] ?? '',
+      workoutId: json['workout_id'],
+      workoutName: json['workout_name'] ?? '',
+      workoutType: json['workout_type'] ?? '',
       sets: json['sets'] ?? 3,
       reps: json['reps'] ?? 10,
-      sortOrder: json['sortOrder'] ?? 0,
+      sortOrder: json['sort_order'] ?? 0,
     );
   }
 }
@@ -110,15 +110,15 @@ class PlannedWorkout {
   factory PlannedWorkout.fromJson(Map<String, dynamic> json) {
     return PlannedWorkout(
       id: json['id'],
-      workoutId: json['workoutId'],
-      workoutName: json['workoutName'] ?? '',
-      workoutType: json['workoutType'] ?? '',
-      tutorialVideoUrl: json['tutorialVideoUrl'],
-      plannedDate: json['plannedDate'] ?? '',
+      workoutId: json['workout_id'],
+      workoutName: json['workout_name'] ?? '',
+      workoutType: json['workout_type'] ?? '',
+      tutorialVideoUrl: json['tutorial_video_url'],
+      plannedDate: json['planned_date'] ?? '',
       sets: json['sets'] ?? 3,
       reps: json['reps'] ?? 10,
       completed: json['completed'] ?? false,
-      sortOrder: json['sortOrder'] ?? 0,
+      sortOrder: json['sort_order'] ?? 0,
     );
   }
 }
