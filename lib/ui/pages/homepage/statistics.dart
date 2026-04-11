@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:provider/provider.dart';
-import 'package:trackon_mobile/data/providers/steps_provider.dart';
-import 'package:trackon_mobile/data/providers/connectivity_provider.dart';
 import 'dart:math' as math;
 
 enum StatsItemType {
@@ -19,33 +16,30 @@ enum StatsItemType {
 class StatisticsData {
   final StatsItemType type;
   final String todayValue;
-  final List<double> weeklyData; // 7 days of data
+  final List<double> weeklyData; // 7 values, oldest first, today last
+  final List<String> dayLabels;  // 7 labels matching weeklyData
 
   const StatisticsData({
     required this.type,
     required this.todayValue,
     required this.weeklyData,
+    required this.dayLabels,
   });
 }
 
 class PreparedItemData {
-  // final String expandedDisplayValue;
   final StatsItemType type;
   final String collapsedDisplayValue;
 
   const PreparedItemData({
-    // required this.progressText,
-    // required this.expandedDisplayValue,
     required this.type,
     required this.collapsedDisplayValue,
   });
 
   factory PreparedItemData.from(StatisticsData data) {
-    final String collapsedValue = _formatDisplayValue(data);
-
     return PreparedItemData(
       type: data.type,
-      collapsedDisplayValue: collapsedValue,
+      collapsedDisplayValue: _formatDisplayValue(data),
     );
   }
 
@@ -57,9 +51,7 @@ class PreparedItemData {
     }
     if (data.type == StatsItemType.activity) {
       final value = double.tryParse(data.todayValue) ?? 0.0;
-      if (value > 60) {
-        return '${(value / 60).toStringAsFixed(1)} hrs';
-      }
+      if (value > 60) return '${(value / 60).toStringAsFixed(1)} hrs';
       return '${value.toStringAsFixed(0)} mins';
     }
     if (data.type == StatsItemType.mileage) {
@@ -85,8 +77,19 @@ enum ViewType {
   }
 }
 
+/// Pure display widget — receives data, doesn't access providers.
 class StatisticsWidget extends StatelessWidget {
-  const StatisticsWidget({super.key});
+  final List<StatisticsData> data;
+  final VoidCallback? onRefresh;
+  final bool isSyncing;
+
+  const StatisticsWidget({
+    super.key,
+    required this.data,
+    this.onRefresh,
+    this.isSyncing = false,
+  });
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -99,6 +102,9 @@ class StatisticsWidget extends StatelessWidget {
             widgetWidth: math.min(constraints.maxWidth, viewType.maxWidth),
             widgetHeight: viewType.height,
             viewType: viewType,
+            data: data,
+            onRefresh: onRefresh,
+            isSyncing: isSyncing,
           ),
         );
       },
@@ -106,10 +112,11 @@ class StatisticsWidget extends StatelessWidget {
   }
 }
 
+// ============ SIZE ANIMATION HELPERS ============
+
 class _SizeData {
   final double width;
   final double height;
-
   const _SizeData(this.width, this.height);
 
   static _SizeData lerp(_SizeData a, _SizeData b, double t) {
@@ -128,17 +135,22 @@ class _SizeDataTween extends Tween<_SizeData> {
   _SizeData lerp(double t) => _SizeData.lerp(begin!, end!, t);
 }
 
+// ============ CONTAINER (animation + layout) ============
+
 class StatisticsContainer extends StatefulWidget {
   final double widgetWidth;
   final double widgetHeight;
   final ViewType viewType;
+  final List<StatisticsData> data;
+  final VoidCallback? onRefresh;
+  final bool isSyncing;
+
   final double expandedBarWidth;
   final double expandedBarHeight;
   final double shrinkedBarWidth;
   final double shrinkedBarHeight;
   static const double padding = 10;
 
-  //bars positions;
   final Offset expandedBarPosition = const Offset(0, 0);
   late final Offset shrinkedFirstBarPosition;
   late final Offset shrinkedSecondBarPosition;
@@ -148,6 +160,9 @@ class StatisticsContainer extends StatefulWidget {
     required this.widgetWidth,
     required this.widgetHeight,
     required this.viewType,
+    required this.data,
+    this.onRefresh,
+    this.isSyncing = false,
   }) : expandedBarWidth = (viewType == ViewType.phone)
            ? widgetWidth
            : (widgetWidth - padding) * 0.7,
@@ -169,10 +184,10 @@ class StatisticsContainer extends StatefulWidget {
   }
 
   @override
-  State<StatisticsContainer> createState() => _StatisticsContainer();
+  State<StatisticsContainer> createState() => _StatisticsContainerState();
 }
 
-class _StatisticsContainer extends State<StatisticsContainer>
+class _StatisticsContainerState extends State<StatisticsContainer>
     with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late CurvedAnimation _animationCurve;
@@ -182,21 +197,25 @@ class _StatisticsContainer extends State<StatisticsContainer>
   late String shrinkedSecond;
 
   late Animation<_SizeData> expandShrinkedAnim;
+  late Animation<_SizeData> shrinkExpandedAnim;
   late Animation<Offset> moveExpandingAnimFromFirst;
   late Animation<Offset> moveExpandingAnimFromSecond;
-  late Animation<_SizeData> shrinkExpandedAnim;
   late Animation<Offset> moveShrinkingAnimFirst;
   late Animation<Offset> moveShrinkingAnimSecond;
   late Animation<Offset> moveShrinkedAnimFirst;
   late Animation<Offset> moveShrinkedAnimSecond;
   late Animation<_SizeData> unchangedSize;
 
-  late List<StatisticsData> _statsData;
-  late List<PreparedItemData> _preparedData;
+  late Animation<_SizeData> aSize;
+  late Animation<Offset> aMove;
+  late Animation<_SizeData> bSize;
+  late Animation<Offset> bMove;
+  late Animation<_SizeData> cSize;
+  late Animation<Offset> cMove;
+
   @override
   void initState() {
     super.initState();
-    initData();
     expanded = 'a';
     shrinkedFirst = 'b';
     shrinkedSecond = 'c';
@@ -205,14 +224,12 @@ class _StatisticsContainer extends State<StatisticsContainer>
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-
     _animationCurve = CurvedAnimation(
       parent: _animationController,
       curve: Curves.easeInOut,
     );
 
     _initializeAnimations();
-
     setupAnimations(
       expandingLabel: shrinkedSecond,
       prevExpandedLabel: expanded,
@@ -230,65 +247,6 @@ class _StatisticsContainer extends State<StatisticsContainer>
       positionFrom: "second",
     );
     _animationController.value = 0.0;
-    // setupPositionsAndSizes();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final stepsProvider = context.watch<StepsProvider>();
-    final todaySteps = stepsProvider.today;
-    _statsData = [
-      StatisticsData(
-        type: StatsItemType.steps,
-        todayValue: '${todaySteps.stepCount}',
-        weeklyData: stepsProvider.history.length >= 7
-            ? stepsProvider.history.take(7).map((e) => e.stepCount.toDouble()).toList().reversed.toList()
-            : [0, 0, 0, 0, 0, 0, todaySteps.stepCount.toDouble()],
-      ),
-      StatisticsData(
-        type: StatsItemType.activity,
-        todayValue: '${(todaySteps.stepCount * 0.004).toStringAsFixed(0)}',
-        weeklyData: stepsProvider.history.length >= 7
-            ? stepsProvider.history.take(7).map((e) => e.stepCount * 0.004).toList().reversed.toList()
-            : [0, 0, 0, 0, 0, 0, todaySteps.stepCount * 0.004],
-      ),
-      StatisticsData(
-        type: StatsItemType.mileage,
-        todayValue: '${todaySteps.distanceKm.toStringAsFixed(1)}',
-        weeklyData: stepsProvider.history.length >= 7
-            ? stepsProvider.history.take(7).map((e) => e.distanceKm).toList().reversed.toList()
-            : [0, 0, 0, 0, 0, 0, todaySteps.distanceKm],
-      ),
-    ];
-
-    _preparedData = _statsData
-        .map((data) => PreparedItemData.from(data))
-        .toList();
-  }
-
-  void initData() {
-    _statsData = [
-      StatisticsData(
-        type: StatsItemType.steps,
-        todayValue: '0',
-        weeklyData: [0, 0, 0, 0, 0, 0, 0],
-      ),
-      StatisticsData(
-        type: StatsItemType.activity,
-        todayValue: '0',
-        weeklyData: [0, 0, 0, 0, 0, 0, 0],
-      ),
-      StatisticsData(
-        type: StatsItemType.mileage,
-        todayValue: '0',
-        weeklyData: [0, 0, 0, 0, 0, 0, 0],
-      ),
-    ];
-
-    _preparedData = _statsData
-        .map((data) => PreparedItemData.from(data))
-        .toList();
   }
 
   void _initializeAnimations() {
@@ -345,21 +303,6 @@ class _StatisticsContainer extends State<StatisticsContainer>
     super.dispose();
   }
 
-  late Animation<_SizeData> aSize;
-  late Animation<Offset> aMove;
-
-  late Animation<_SizeData> bSize;
-  late Animation<Offset> bMove;
-
-  late Animation<_SizeData> cSize;
-  late Animation<Offset> cMove;
-
-  void refreshData() {
-    setState(() {
-      // Trigger rebuild to reflect any data changes
-    });
-  }
-
   void setupAnimations({
     required String expandingLabel,
     required String prevExpandedLabel,
@@ -367,70 +310,48 @@ class _StatisticsContainer extends State<StatisticsContainer>
   }) {
     if (expandingLabel == 'a') {
       aSize = expandShrinkedAnim;
-      aMove = positionFrom == 'first'
-          ? moveExpandingAnimFromFirst
-          : moveExpandingAnimFromSecond;
+      aMove = positionFrom == 'first' ? moveExpandingAnimFromFirst : moveExpandingAnimFromSecond;
     } else if (expandingLabel == 'b') {
       bSize = expandShrinkedAnim;
-      bMove = positionFrom == 'first'
-          ? moveExpandingAnimFromFirst
-          : moveExpandingAnimFromSecond;
+      bMove = positionFrom == 'first' ? moveExpandingAnimFromFirst : moveExpandingAnimFromSecond;
     } else if (expandingLabel == 'c') {
       cSize = expandShrinkedAnim;
-      cMove = positionFrom == 'first'
-          ? moveExpandingAnimFromFirst
-          : moveExpandingAnimFromSecond;
+      cMove = positionFrom == 'first' ? moveExpandingAnimFromFirst : moveExpandingAnimFromSecond;
     }
 
     switch (prevExpandedLabel) {
       case 'a':
         aSize = shrinkExpandedAnim;
-        aMove = positionFrom == 'first'
-            ? moveShrinkingAnimSecond
-            : moveShrinkingAnimFirst;
+        aMove = positionFrom == 'first' ? moveShrinkingAnimSecond : moveShrinkingAnimFirst;
         break;
       case 'b':
         bSize = shrinkExpandedAnim;
-        bMove = positionFrom == 'first'
-            ? moveShrinkingAnimSecond
-            : moveShrinkingAnimFirst;
+        bMove = positionFrom == 'first' ? moveShrinkingAnimSecond : moveShrinkingAnimFirst;
         break;
       case 'c':
         cSize = shrinkExpandedAnim;
-        cMove = positionFrom == 'first'
-            ? moveShrinkingAnimSecond
-            : moveShrinkingAnimFirst;
+        cMove = positionFrom == 'first' ? moveShrinkingAnimSecond : moveShrinkingAnimFirst;
         break;
     }
 
     if (expandingLabel != 'a' && prevExpandedLabel != 'a') {
       aSize = unchangedSize;
-      aMove = positionFrom == 'first'
-          ? moveShrinkedAnimFirst
-          : moveShrinkedAnimSecond;
+      aMove = positionFrom == 'first' ? moveShrinkedAnimFirst : moveShrinkedAnimSecond;
     }
     if (expandingLabel != 'b' && prevExpandedLabel != 'b') {
       bSize = unchangedSize;
-      bMove = positionFrom == 'first'
-          ? moveShrinkedAnimFirst
-          : moveShrinkedAnimSecond;
+      bMove = positionFrom == 'first' ? moveShrinkedAnimFirst : moveShrinkedAnimSecond;
     }
     if (expandingLabel != 'c' && prevExpandedLabel != 'c') {
       cSize = unchangedSize;
-      cMove = positionFrom == 'first'
-          ? moveShrinkedAnimFirst
-          : moveShrinkedAnimSecond;
+      cMove = positionFrom == 'first' ? moveShrinkedAnimFirst : moveShrinkedAnimSecond;
     }
   }
 
   void expandShrinked(String label) {
-    if (expanded == label) return; // Already expanded
+    if (expanded == label) return;
     final position = shrinkedFirst == label ? "first" : "second";
-    setupAnimations(
-      expandingLabel: label,
-      prevExpandedLabel: expanded,
-      positionFrom: position,
-    );
+    setupAnimations(expandingLabel: label, prevExpandedLabel: expanded, positionFrom: position);
     if (position == "first") {
       shrinkedFirst = shrinkedSecond;
       shrinkedSecond = expanded;
@@ -439,15 +360,17 @@ class _StatisticsContainer extends State<StatisticsContainer>
       shrinkedFirst = expanded;
     }
     expanded = label;
-    _animate();
-  }
-
-  void _animate() {
     _animationController.forward(from: 0.0);
   }
 
+  List<PreparedItemData> get _preparedData =>
+      widget.data.map((d) => PreparedItemData.from(d)).toList();
+
   @override
   Widget build(BuildContext context) {
+    final prepared = _preparedData;
+    if (prepared.length < 3) return const SizedBox.shrink();
+
     return AnimatedBuilder(
       animation: _animationController,
       builder: (_, _) {
@@ -458,48 +381,42 @@ class _StatisticsContainer extends State<StatisticsContainer>
             clipBehavior: Clip.none,
             children: [
               Positioned(
-                top: aMove.value.dy,
-                left: aMove.value.dx,
-                width: aSize.value.width,
-                height: aSize.value.height,
+                top: aMove.value.dy, left: aMove.value.dx,
+                width: aSize.value.width, height: aSize.value.height,
                 child: GestureDetector(
                   onTap: () => expandShrinked('a'),
                   child: StatsItem(
-                    data: _preparedData[0],
-                    weeklyData: _statsData[0].weeklyData,
+                    data: prepared[0],
+                    weeklyData: widget.data[0].weeklyData,
+                    dayLabels: widget.data[0].dayLabels,
                     isExpanded: expanded == 'a',
-                    onRefresh: () {
-                      final isOnline = context.read<ConnectivityProvider>().isOnline;
-                      context.read<StepsProvider>().forceRefresh(isOnline: isOnline);
-                    },
-                    isSyncing: context.watch<StepsProvider>().isSyncing,
+                    onRefresh: widget.onRefresh,
+                    isSyncing: widget.isSyncing,
                   ),
                 ),
               ),
               Positioned(
-                top: bMove.value.dy,
-                left: bMove.value.dx,
-                width: bSize.value.width,
-                height: bSize.value.height,
+                top: bMove.value.dy, left: bMove.value.dx,
+                width: bSize.value.width, height: bSize.value.height,
                 child: GestureDetector(
                   onTap: () => expandShrinked('b'),
                   child: StatsItem(
-                    data: _preparedData[1],
-                    weeklyData: _statsData[1].weeklyData,
+                    data: prepared[1],
+                    weeklyData: widget.data[1].weeklyData,
+                    dayLabels: widget.data[1].dayLabels,
                     isExpanded: expanded == 'b',
                   ),
                 ),
               ),
               Positioned(
-                top: cMove.value.dy,
-                left: cMove.value.dx,
-                width: cSize.value.width,
-                height: cSize.value.height,
+                top: cMove.value.dy, left: cMove.value.dx,
+                width: cSize.value.width, height: cSize.value.height,
                 child: GestureDetector(
                   onTap: () => expandShrinked('c'),
                   child: StatsItem(
-                    data: _preparedData[2],
-                    weeklyData: _statsData[2].weeklyData,
+                    data: prepared[2],
+                    weeklyData: widget.data[2].weeklyData,
+                    dayLabels: widget.data[2].dayLabels,
                     isExpanded: expanded == 'c',
                   ),
                 ),
@@ -512,9 +429,12 @@ class _StatisticsContainer extends State<StatisticsContainer>
   }
 }
 
+// ============ INDIVIDUAL BAR ============
+
 class StatsItem extends StatelessWidget {
   final PreparedItemData data;
   final List<double> weeklyData;
+  final List<String> dayLabels;
   final bool isExpanded;
   final VoidCallback? onRefresh;
   final bool isSyncing;
@@ -523,6 +443,7 @@ class StatsItem extends StatelessWidget {
     super.key,
     required this.data,
     required this.weeklyData,
+    required this.dayLabels,
     required this.isExpanded,
     this.onRefresh,
     this.isSyncing = false,
@@ -551,7 +472,6 @@ class StatsItem extends StatelessWidget {
 
   Widget _buildExpandedView(BuildContext context) {
     final color = Theme.of(context).colorScheme.primary;
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final maxY = weeklyData.isEmpty ? 1.0 : weeklyData.reduce((a, b) => a > b ? a : b);
 
     return Padding(
@@ -574,17 +494,10 @@ class StatsItem extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      data.type.label,
-                      style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
-                    ),
+                    Text(data.type.label, style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
                     Text(
                       data.collapsedDisplayValue,
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: color,
-                      ),
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: color),
                     ),
                   ],
                 ),
@@ -593,10 +506,8 @@ class StatsItem extends StatelessWidget {
                 GestureDetector(
                   onTap: isSyncing ? null : onRefresh,
                   child: isSyncing
-                      ? SizedBox(
-                          width: 20, height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: color),
-                        )
+                      ? SizedBox(width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: color))
                       : Icon(Icons.refresh, color: Colors.grey.shade400, size: 22),
                 ),
             ],
@@ -620,10 +531,10 @@ class StatsItem extends StatelessWidget {
                       reservedSize: 19,
                       getTitlesWidget: (value, meta) {
                         final i = value.toInt();
-                        if (i < 0 || i >= days.length) return const SizedBox.shrink();
+                        if (i < 0 || i >= dayLabels.length) return const SizedBox.shrink();
                         return SideTitleWidget(
                           meta: meta,
-                          child: Text(days[i], style: const TextStyle(fontSize: 10)),
+                          child: Text(dayLabels[i], style: const TextStyle(fontSize: 10)),
                         );
                       },
                     ),

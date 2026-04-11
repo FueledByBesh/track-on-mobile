@@ -6,6 +6,7 @@ import 'package:trackon_mobile/data/providers/fitness_provider.dart';
 import 'package:trackon_mobile/data/providers/connectivity_provider.dart';
 import 'package:trackon_mobile/data/providers/steps_provider.dart';
 import 'package:trackon_mobile/data/models/workout.dart';
+import 'package:trackon_mobile/data/models/daily_steps.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/notifications_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/profile_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/settings_page.dart';
@@ -43,10 +44,69 @@ class HomePageBody extends StatelessWidget {
   const HomePageBody({super.key});
   static const double horizontalPadding = 16;
 
+  /// Build 7-day data array from history. Today is always last.
+  /// Pads with zeros for missing days.
+  static List<double> _build7DayData(
+    List<DailySteps> history,
+    double Function(DailySteps) extractor,
+  ) {
+    final now = DateTime.now();
+    final result = List<double>.filled(7, 0);
+    final dateMap = {for (final d in history) d.date: d};
+
+    for (int i = 0; i < 7; i++) {
+      final date = now.subtract(Duration(days: 6 - i));
+      final dateStr = date.toLocal().toIso8601String().split('T')[0];
+      final entry = dateMap[dateStr];
+      if (entry != null) {
+        result[i] = extractor(entry);
+      }
+    }
+    return result;
+  }
+
+  /// Day labels for last 7 days, today is last.
+  static List<String> _buildDayLabels() {
+    final now = DateTime.now();
+    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return List.generate(7, (i) {
+      final d = now.subtract(Duration(days: 6 - i));
+      return names[d.weekday - 1];
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final stepsProvider = context.watch<StepsProvider>();
     final fitnessProvider = context.watch<FitnessProvider>();
     final plannedWorkouts = fitnessProvider.plannedWorkouts;
+
+    final todaySteps = stepsProvider.today;
+    final dayLabels = _buildDayLabels();
+    final stepsWeekly = _build7DayData(stepsProvider.history, (d) => d.stepCount.toDouble());
+    final activityWeekly = _build7DayData(stepsProvider.history, (d) => d.stepCount * 0.004);
+    final mileageWeekly = _build7DayData(stepsProvider.history, (d) => d.distanceKm);
+
+    final statsData = [
+      StatisticsData(
+        type: StatsItemType.steps,
+        todayValue: '${todaySteps.stepCount}',
+        weeklyData: stepsWeekly,
+        dayLabels: dayLabels,
+      ),
+      StatisticsData(
+        type: StatsItemType.activity,
+        todayValue: (todaySteps.stepCount * 0.004).toStringAsFixed(0),
+        weeklyData: activityWeekly,
+        dayLabels: dayLabels,
+      ),
+      StatisticsData(
+        type: StatsItemType.mileage,
+        todayValue: todaySteps.distanceKm.toStringAsFixed(1),
+        weeklyData: mileageWeekly,
+        dayLabels: dayLabels,
+      ),
+    ];
 
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
@@ -58,7 +118,19 @@ class HomePageBody extends StatelessWidget {
       child: Column(
         spacing: 20,
         children: [
-          const StatisticsWidget(),
+          stepsProvider.isLoading
+              ? const SizedBox(
+                  height: 400,
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              : StatisticsWidget(
+                  data: statsData,
+                  onRefresh: () {
+                    final isOnline = context.read<ConnectivityProvider>().isOnline;
+                    stepsProvider.forceRefresh(isOnline: isOnline);
+                  },
+                  isSyncing: stepsProvider.isSyncing,
+                ),
           // Today's Plan
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
