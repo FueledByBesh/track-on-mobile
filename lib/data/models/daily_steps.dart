@@ -32,6 +32,17 @@ class DailySteps {
     );
   }
 
+  Map<String, dynamic> toJson() => {
+    if (id != null) 'id': id,
+    'date': date,
+    'step_count': stepCount,
+    'goal': goal,
+    'progress_percent': progressPercent,
+    'distance_km': distanceKm,
+    'calories_burned': caloriesBurned,
+    if (lastUpdated != null) 'last_updated': lastUpdated,
+  };
+
   factory DailySteps.empty() {
     return DailySteps(
       date: DateTime.now().toIso8601String().split('T')[0],

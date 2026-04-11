@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/providers/steps_provider.dart';
+import 'package:trackon_mobile/data/providers/connectivity_provider.dart';
 import 'dart:math' as math;
 
 enum StatsItemType {
@@ -467,6 +468,11 @@ class _StatisticsContainer extends State<StatisticsContainer>
                     data: _preparedData[0],
                     weeklyData: _statsData[0].weeklyData,
                     isExpanded: expanded == 'a',
+                    onRefresh: () {
+                      final isOnline = context.read<ConnectivityProvider>().isOnline;
+                      context.read<StepsProvider>().forceRefresh(isOnline: isOnline);
+                    },
+                    isSyncing: context.watch<StepsProvider>().isSyncing,
                   ),
                 ),
               ),
@@ -510,12 +516,16 @@ class StatsItem extends StatelessWidget {
   final PreparedItemData data;
   final List<double> weeklyData;
   final bool isExpanded;
+  final VoidCallback? onRefresh;
+  final bool isSyncing;
 
   const StatsItem({
     super.key,
     required this.data,
     required this.weeklyData,
     required this.isExpanded,
+    this.onRefresh,
+    this.isSyncing = false,
   });
 
   @override
@@ -542,10 +552,7 @@ class StatsItem extends StatelessWidget {
   Widget _buildExpandedView(BuildContext context) {
     final color = Theme.of(context).colorScheme.primary;
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    final spots = List.generate(
-      weeklyData.length,
-      (i) => FlSpot(i.toDouble(), weeklyData[i]),
-    );
+    final maxY = weeklyData.isEmpty ? 1.0 : weeklyData.reduce((a, b) => a > b ? a : b);
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -563,33 +570,46 @@ class StatsItem extends StatelessWidget {
                 child: Icon(data.type.icon, color: color, size: 22),
               ),
               const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    data.type.label,
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
-                  ),
-                  Text(
-                    data.collapsedDisplayValue,
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: color,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      data.type.label,
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
                     ),
-                  ),
-                ],
+                    Text(
+                      data.collapsedDisplayValue,
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: color,
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              if (onRefresh != null)
+                GestureDetector(
+                  onTap: isSyncing ? null : onRefresh,
+                  child: isSyncing
+                      ? SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: color),
+                        )
+                      : Icon(Icons.refresh, color: Colors.grey.shade400, size: 22),
+                ),
             ],
           ),
           const SizedBox(height: 16),
           Expanded(
-            child: LineChart(
-              LineChartData(
+            child: BarChart(
+              BarChartData(
+                alignment: BarChartAlignment.spaceAround,
+                maxY: maxY > 0 ? maxY * 1.15 : 1,
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
-                  horizontalInterval: null,
                   getDrawingHorizontalLine: (value) =>
                       FlLine(color: Colors.grey.withAlpha(30), strokeWidth: 1),
                 ),
@@ -597,47 +617,48 @@ class StatsItem extends StatelessWidget {
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      interval: 1,
                       reservedSize: 19,
                       getTitlesWidget: (value, meta) {
                         final i = value.toInt();
-                        if (i != value || i < 0 || i >= days.length) {
-                          return const SizedBox.shrink();
-                        }
+                        if (i < 0 || i >= days.length) return const SizedBox.shrink();
                         return SideTitleWidget(
                           meta: meta,
-                          child: Text(
-                            days[i],
-                            style: const TextStyle(fontSize: 10),
-                          ),
+                          child: Text(days[i], style: const TextStyle(fontSize: 10)),
                         );
                       },
                     ),
                   ),
-                  leftTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
+                  leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 ),
                 borderData: FlBorderData(show: false),
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: spots,
-                    isCurved: true,
-                    color: color,
-                    barWidth: 3,
-                    dotData: FlDotData(show: true),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      color: color.withAlpha(30),
-                    ),
+                barGroups: List.generate(weeklyData.length, (i) {
+                  return BarChartGroupData(
+                    x: i,
+                    barRods: [
+                      BarChartRodData(
+                        toY: weeklyData[i],
+                        color: color,
+                        width: 16,
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(4),
+                          topRight: Radius.circular(4),
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+                barTouchData: BarTouchData(
+                  touchTooltipData: BarTouchTooltipData(
+                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                      return BarTooltipItem(
+                        rod.toY.toInt().toString(),
+                        TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 13),
+                      );
+                    },
                   ),
-                ],
+                ),
               ),
             ),
           ),

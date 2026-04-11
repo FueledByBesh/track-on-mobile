@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/providers/auth_provider.dart';
 import 'package:trackon_mobile/data/providers/connectivity_provider.dart';
-import 'package:trackon_mobile/data/providers/steps_provider.dart';
 import 'package:trackon_mobile/ui/pages/auth/login_page.dart';
 import 'package:trackon_mobile/ui/pages/homepage/core.dart';
 import 'package:trackon_mobile/ui/pages/fitnesspage/core.dart';
@@ -92,15 +91,6 @@ class _MainNavigationState extends State<MainNavigation> {
     const FitnessPage(),
     const GroupsPage(),
   ];
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final isOnline = context.read<ConnectivityProvider>().isOnline;
-      context.read<StepsProvider>().loadSteps(isOnline: isOnline);
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
