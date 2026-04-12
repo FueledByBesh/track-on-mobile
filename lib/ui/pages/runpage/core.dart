@@ -5,9 +5,9 @@ import 'package:trackon_mobile/data/providers/activity_history_provider.dart';
 import 'package:trackon_mobile/data/providers/activity_provider.dart';
 import 'package:trackon_mobile/data/services/location_tracker.dart';
 import 'widgets/activity_type_selector.dart';
-import 'widgets/run_controls.dart';
-import 'widgets/run_info_bar.dart';
+import 'widgets/run_idle_view.dart';
 import 'widgets/run_map_view.dart';
+import 'widgets/run_recording_view.dart';
 import 'widgets/running_history_sheet.dart';
 
 class RunPage extends StatefulWidget {
@@ -18,6 +18,7 @@ class RunPage extends StatefulWidget {
 }
 
 class _RunPageState extends State<RunPage> {
+  // Shared map controller — same map widget is reused across both views
   final RunMapViewController _mapController = RunMapViewController();
   final LocationTracker _initialLocationTracker = GeolocatorLocationTracker();
 
@@ -99,11 +100,17 @@ class _RunPageState extends State<RunPage> {
     }
   }
 
+  void _showHistory() {
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => const RunningHistorySheet(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final activityProvider = context.watch<ActivityProvider>();
     final isTracking = activityProvider.isTracking;
-    final isPaused = activityProvider.isPaused;
 
     final routePoints = activityProvider.routePoints
         .map((p) => LatLng(p.latitude, p.longitude))
@@ -117,68 +124,37 @@ class _RunPageState extends State<RunPage> {
     }
 
     return SafeArea(
-      child: Column(
-        children: [
-          Expanded(
-            child: Stack(
-              children: [
-                RunMapView(
-                  currentPosition: currentPosition,
-                  routePoints: routePoints,
-                  isLoading: _loadingInitial,
-                  error: _locationError,
-                  onRetry: () {
-                    setState(() {
-                      _loadingInitial = true;
-                      _locationError = null;
-                    });
-                    _initLocation();
-                  },
-                  controller: _mapController,
-                ),
-                Positioned(
-                  top: 16,
-                  left: 16,
-                  right: 16,
-                  child: RunInfoBar(
-                    durationSeconds: activityProvider.liveDuration,
-                    distanceKm: activityProvider.liveDistance,
-                  ),
-                ),
-              ],
+      child: isTracking
+          ? RunRecordingView(
+              currentPosition: currentPosition,
+              routePoints: routePoints,
+              mapController: _mapController,
+              durationSeconds: activityProvider.liveDuration,
+              distanceKm: activityProvider.liveDistance,
+              isPaused: activityProvider.isPaused,
+              onPause: () => activityProvider.pause(),
+              onResume: () => activityProvider.resume(),
+              onStop: _stop,
+              onMyLocation: _recenter,
+            )
+          : RunIdleView(
+              currentPosition: currentPosition,
+              isLoading: _loadingInitial,
+              error: _locationError,
+              onRetry: () {
+                setState(() {
+                  _loadingInitial = true;
+                  _locationError = null;
+                });
+                _initLocation();
+              },
+              mapController: _mapController,
+              selectedType: _selectedType,
+              onTypeChanged: (type) => setState(() => _selectedType = type),
+              onStart: _start,
+              onShowHistory: _showHistory,
+              onMyLocation: _recenter,
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
-                if (!isTracking) ...[
-                  ActivityTypeSelector(
-                    selected: _selectedType,
-                    onChanged: (type) => setState(() => _selectedType = type),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                RunControls(
-                  isTracking: isTracking,
-                  isPaused: isPaused,
-                  onStart: _start,
-                  onPause: () => activityProvider.pause(),
-                  onResume: () => activityProvider.resume(),
-                  onStop: _stop,
-                  onShowHistory: () {
-                    showModalBottomSheet(
-                      context: context,
-                      builder: (_) => const RunningHistorySheet(),
-                    );
-                  },
-                  onMyLocation: _recenter,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

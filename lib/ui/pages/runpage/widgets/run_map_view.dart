@@ -1,6 +1,16 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+
+enum CameraMode {
+  /// User can pan freely. No auto-follow.
+  free,
+
+  /// Map auto-follows currentPosition. If user pans manually,
+  /// auto-follow pauses for [softLockTimeout] then resumes.
+  locked,
+}
 
 /// Map-implementation-agnostic controller.
 /// When swapping to MapBox, only the implementation inside RunMapView changes.
@@ -10,15 +20,13 @@ class RunMapViewController {
   void _attach(_RunMapViewState state) => _state = state;
   void _detach() => _state = null;
 
-  /// Recenter the map on the given position.
+  /// Force-recenter the map on the given position.
   void recenterTo(LatLng position, {double zoom = 16}) {
     _state?._recenterTo(position, zoom);
   }
 }
 
-/// Pure display widget — receives data, renders the map.
-/// Currently uses flutter_map. Designed so we can swap to MapBox by
-/// rewriting only this widget's internal implementation.
+/// Pure display widget. Render flutter_map now, easy to swap to MapBox.
 class RunMapView extends StatefulWidget {
   final LatLng? currentPosition;
   final List<LatLng> routePoints;
@@ -26,6 +34,16 @@ class RunMapView extends StatefulWidget {
   final String? error;
   final VoidCallback? onRetry;
   final RunMapViewController? controller;
+  final CameraMode cameraMode;
+
+  /// Time after a user gesture before auto-follow resumes (in locked mode).
+  static const Duration softLockTimeout = Duration(seconds: 5);
+
+  /// Zoom level when auto-following during recording.
+  static const double recordingZoom = 17.5;
+
+  /// Default zoom in idle (free) mode.
+  static const double idleZoom = 16.0;
 
   const RunMapView({
     super.key,
@@ -35,6 +53,7 @@ class RunMapView extends StatefulWidget {
     this.error,
     this.onRetry,
     this.controller,
+    this.cameraMode = CameraMode.free,
   });
 
   @override
@@ -44,6 +63,8 @@ class RunMapView extends StatefulWidget {
 class _RunMapViewState extends State<RunMapView> {
   final MapController _mapController = MapController();
   bool _hasInitiallyCentered = false;
+  bool _autoFollowSuspended = false;
+  Timer? _resumeFollowTimer;
 
   @override
   void initState() {
@@ -58,9 +79,27 @@ class _RunMapViewState extends State<RunMapView> {
       oldWidget.controller?._detach();
       widget.controller?._attach(this);
     }
-    // Auto-follow user position during a run
-    if (widget.currentPosition != null &&
+
+    // Camera mode just switched to locked → recenter immediately and zoom in.
+    if (widget.cameraMode == CameraMode.locked &&
+        oldWidget.cameraMode != CameraMode.locked &&
+        widget.currentPosition != null) {
+      _autoFollowSuspended = false;
+      _mapController.move(widget.currentPosition!, RunMapView.recordingZoom);
+    }
+
+    // Camera mode just switched to free → zoom out.
+    if (widget.cameraMode == CameraMode.free &&
+        oldWidget.cameraMode != CameraMode.free &&
+        widget.currentPosition != null) {
+      _mapController.move(widget.currentPosition!, RunMapView.idleZoom);
+    }
+
+    // Auto-follow in locked mode
+    if (widget.cameraMode == CameraMode.locked &&
+        widget.currentPosition != null &&
         widget.currentPosition != oldWidget.currentPosition &&
+        !_autoFollowSuspended &&
         _hasInitiallyCentered) {
       _mapController.move(widget.currentPosition!, _mapController.camera.zoom);
     }
@@ -68,12 +107,31 @@ class _RunMapViewState extends State<RunMapView> {
 
   @override
   void dispose() {
+    _resumeFollowTimer?.cancel();
     widget.controller?._detach();
     super.dispose();
   }
 
   void _recenterTo(LatLng position, double zoom) {
+    _autoFollowSuspended = false;
+    _resumeFollowTimer?.cancel();
     _mapController.move(position, zoom);
+  }
+
+  void _onPositionChanged(MapCamera camera, bool hasGesture) {
+    if (!hasGesture) return;
+    if (widget.cameraMode != CameraMode.locked) return;
+
+    // User panned during locked mode → suspend auto-follow temporarily.
+    _autoFollowSuspended = true;
+    _resumeFollowTimer?.cancel();
+    _resumeFollowTimer = Timer(RunMapView.softLockTimeout, () {
+      if (!mounted) return;
+      _autoFollowSuspended = false;
+      if (widget.currentPosition != null) {
+        _mapController.move(widget.currentPosition!, _mapController.camera.zoom);
+      }
+    });
   }
 
   @override
@@ -107,16 +165,20 @@ class _RunMapViewState extends State<RunMapView> {
       );
     }
 
-    // Center on first build
     if (!_hasInitiallyCentered) {
       _hasInitiallyCentered = true;
     }
+
+    final initialZoom = widget.cameraMode == CameraMode.locked
+        ? RunMapView.recordingZoom
+        : RunMapView.idleZoom;
 
     return FlutterMap(
       mapController: _mapController,
       options: MapOptions(
         initialCenter: widget.currentPosition!,
-        initialZoom: 16.0,
+        initialZoom: initialZoom,
+        onPositionChanged: _onPositionChanged,
       ),
       children: [
         TileLayer(

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/providers/auth_provider.dart';
 import 'package:trackon_mobile/data/providers/connectivity_provider.dart';
+import 'package:trackon_mobile/data/providers/activity_provider.dart';
 import 'package:trackon_mobile/ui/pages/auth/login_page.dart';
 import 'package:trackon_mobile/ui/pages/homepage/core.dart';
 import 'package:trackon_mobile/ui/pages/fitnesspage/core.dart';
@@ -95,6 +96,7 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   Widget build(BuildContext context) {
     final connectivity = context.watch<ConnectivityProvider>();
+    final isRecording = context.watch<ActivityProvider>().isTracking;
 
     return Scaffold(
       extendBody: true,
@@ -165,17 +167,36 @@ class _MainNavigationState extends State<MainNavigation> {
                   elevation: 0,
                   selectedItemColor: const Color(0xFF6B5FFF),
                   unselectedItemColor: Colors.grey,
-                  items: const [
-                    BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+                  items: [
+                    const BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
                     BottomNavigationBarItem(
-                      icon: Icon(Icons.directions_run),
+                      icon: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          const Icon(Icons.directions_run),
+                          if (isRecording)
+                            Positioned(
+                              right: -2,
+                              top: -2,
+                              child: Container(
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 1.5),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                       label: 'Run',
                     ),
-                    BottomNavigationBarItem(
+                    const BottomNavigationBarItem(
                       icon: Icon(Icons.fitness_center),
                       label: 'Fitness',
                     ),
-                    BottomNavigationBarItem(
+                    const BottomNavigationBarItem(
                       icon: Icon(Icons.group),
                       label: 'Groups',
                     ),
