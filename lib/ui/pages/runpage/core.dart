@@ -123,8 +123,7 @@ class _RunPageState extends State<RunPage> {
       currentPosition = _initialPosition;
     }
 
-    return SafeArea(
-      child: isTracking
+    return isTracking
           ? RunRecordingView(
               currentPosition: currentPosition,
               routePoints: routePoints,
@@ -154,7 +153,6 @@ class _RunPageState extends State<RunPage> {
               onStart: _start,
               onShowHistory: _showHistory,
               onMyLocation: _recenter,
-            ),
-    );
+            );
   }
 }

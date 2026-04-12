@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/providers/auth_provider.dart';
 import 'package:trackon_mobile/data/providers/connectivity_provider.dart';
@@ -15,6 +16,13 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Make status bar transparent so map can draw underneath it
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarColor: Colors.transparent,
+    ));
+
     return MaterialApp(
       title: 'TrackOn',
       debugShowCheckedModeBanner: false,

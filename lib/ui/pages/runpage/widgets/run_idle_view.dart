@@ -3,7 +3,7 @@ import 'package:latlong2/latlong.dart';
 import 'activity_type_selector.dart';
 import 'run_map_view.dart';
 
-/// Idle state UI: free-pan map, type selector, start button.
+/// Idle state UI: free-pan map with floating action buttons.
 class RunIdleView extends StatelessWidget {
   final LatLng? currentPosition;
   final bool isLoading;
@@ -32,89 +32,47 @@ class RunIdleView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final topInset = MediaQuery.of(context).padding.top;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+
+    return Stack(
       children: [
-        Expanded(
-          child: Stack(
+        RunMapView(
+          currentPosition: currentPosition,
+          routePoints: const [],
+          isLoading: isLoading,
+          error: error,
+          onRetry: onRetry,
+          controller: mapController,
+          cameraMode: CameraMode.free,
+        ),
+        // Top-right floating buttons (history + my location)
+        Positioned(
+          top: 16 + topInset,
+          right: 16,
+          child: Column(
             children: [
-              RunMapView(
-                currentPosition: currentPosition,
-                routePoints: const [],
-                isLoading: isLoading,
-                error: error,
-                onRetry: onRetry,
-                controller: mapController,
-                cameraMode: CameraMode.free,
-              ),
-              // Floating action buttons (top right)
-              Positioned(
-                top: 16,
-                right: 16,
-                child: Column(
-                  children: [
-                    _FloatingIconButton(
-                      icon: Icons.history,
-                      onTap: onShowHistory,
-                    ),
-                    const SizedBox(height: 12),
-                    _FloatingIconButton(
-                      icon: Icons.my_location,
-                      onTap: onMyLocation,
-                    ),
-                  ],
-                ),
-              ),
+              _FloatingIconButton(icon: Icons.history, onTap: onShowHistory),
+              const SizedBox(height: 12),
+              _FloatingIconButton(icon: Icons.my_location, onTap: onMyLocation),
             ],
           ),
         ),
-        // Bottom panel
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withAlpha(20),
-                blurRadius: 8,
-                offset: const Offset(0, -2),
-              ),
-            ],
-          ),
-          child: Column(
+        // Bottom row: activity type popup + start button
+        Positioned(
+          left: 16,
+          right: 16,
+          // Sit just above the bottom nav bar (kBottomNavigationBarHeight = 56)
+          bottom: bottomInset + 8,
+          child: Row(
             children: [
-              ActivityTypeSelector(
+              _ActivityTypePopupButton(
                 selected: selectedType,
                 onChanged: onTypeChanged,
               ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: onStart,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6B5FFF),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                    elevation: 4,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(selectedType.icon, color: Colors.white, size: 24),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Start ${selectedType.label}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _StartButton(type: selectedType, onTap: onStart),
               ),
             ],
           ),
@@ -123,6 +81,124 @@ class RunIdleView extends StatelessWidget {
     );
   }
 }
+
+// ============ Activity type popup button ============
+
+class _ActivityTypePopupButton extends StatelessWidget {
+  final ActivityType selected;
+  final ValueChanged<ActivityType> onChanged;
+
+  const _ActivityTypePopupButton({
+    required this.selected,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: PopupMenuButton<ActivityType>(
+        tooltip: 'Activity type',
+        position: PopupMenuPosition.over,
+        offset: const Offset(0, -160),
+        color: Colors.white,
+        elevation: 8,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        onSelected: onChanged,
+        itemBuilder: (context) => ActivityType.all.map((type) {
+          final isSelected = type.value == selected.value;
+          return PopupMenuItem<ActivityType>(
+            value: type,
+            child: Row(
+              children: [
+                Icon(
+                  type.icon,
+                  color: isSelected
+                      ? const Color(0xFF6B5FFF)
+                      : Colors.grey.shade700,
+                  size: 22,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  type.label,
+                  style: TextStyle(
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                    color: isSelected
+                        ? const Color(0xFF6B5FFF)
+                        : Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+        child: Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withAlpha(50),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Icon(selected.icon, color: const Color(0xFF6B5FFF), size: 26),
+        ),
+      ),
+    );
+  }
+}
+
+// ============ Start button ============
+
+class _StartButton extends StatelessWidget {
+  final ActivityType type;
+  final VoidCallback onTap;
+
+  const _StartButton({required this.type, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 56,
+        decoration: BoxDecoration(
+          color: const Color(0xFF6B5FFF),
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF6B5FFF).withAlpha(120),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.play_arrow, color: Colors.white, size: 26),
+            const SizedBox(width: 6),
+            Text(
+              'Start ${type.label}',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============ Top-right floating button ============
 
 class _FloatingIconButton extends StatelessWidget {
   final IconData icon;

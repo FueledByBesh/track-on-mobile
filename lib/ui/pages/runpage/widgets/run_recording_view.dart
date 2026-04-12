@@ -52,6 +52,7 @@ class RunRecordingView extends StatelessWidget {
     final pausedColor = Colors.grey.shade400;
     final activeColor = Colors.white;
     final textColor = isPaused ? pausedColor : activeColor;
+    final topInset = MediaQuery.of(context).padding.top;
 
     return Column(
       children: [
@@ -64,9 +65,9 @@ class RunRecordingView extends StatelessWidget {
                 controller: mapController,
                 cameraMode: CameraMode.locked,
               ),
-              // My location button (top right)
+              // My location button (top right, below status bar)
               Positioned(
-                top: 16,
+                top: 16 + topInset,
                 right: 16,
                 child: GestureDetector(
                   onTap: onMyLocation,
@@ -91,7 +92,7 @@ class RunRecordingView extends StatelessWidget {
               // Paused indicator
               if (isPaused)
                 Positioned(
-                  top: 16,
+                  top: 16 + topInset,
                   left: 16,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -118,8 +119,10 @@ class RunRecordingView extends StatelessWidget {
             ],
           ),
         ),
-        // Big stats overlay
-        Container(
+        // Big stats overlay — SafeArea(top: false) gives bottom inset for home indicator
+        SafeArea(
+          top: false,
+          child: Container(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
           decoration: BoxDecoration(
             color: const Color(0xFF1C2A3A),
@@ -186,6 +189,7 @@ class RunRecordingView extends StatelessWidget {
                 ],
               ),
             ],
+          ),
           ),
         ),
       ],
