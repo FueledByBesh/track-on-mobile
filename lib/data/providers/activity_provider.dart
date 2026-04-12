@@ -1,170 +1,47 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/activity.dart';
-import '../services/activity_service.dart';
+import '../services/activity_recorder.dart';
+import 'activity_history_provider.dart';
 
+/// Wraps ActivityRecorder for UI consumption.
+/// Notifies listeners when recorder state changes.
 class ActivityProvider extends ChangeNotifier {
-  final ActivityApiService _service;
+  final ActivityRecorder _recorder;
+  final ActivityHistoryProvider _historyProvider;
 
-  Activity? _currentActivity;
-  List<ActivitySummary> _history = [];
-  List<LocationPointData> _locationBuffer = [];
-  bool _isLoading = false;
-  bool _isTracking = false;
-  Timer? _locationTimer;
-
-  // Live tracking stats
-  double _liveDistance = 0;
-  int _liveDuration = 0;
-  Timer? _durationTimer;
-
-  ActivityProvider(this._service);
-
-  Activity? get currentActivity => _currentActivity;
-  List<ActivitySummary> get history => _history;
-  bool get isLoading => _isLoading;
-  bool get isTracking => _isTracking;
-  double get liveDistance => _liveDistance;
-  int get liveDuration => _liveDuration;
-  bool _hasLoadedHistory = false;
-
-  Future<void> loadHistory() async {
-    if (!_hasLoadedHistory) {
-      _isLoading = true;
-      notifyListeners();
-    }
-    try {
-      _history = await _service.getAll();
-      _hasLoadedHistory = true;
-    } catch (e) {
-      debugPrint('Error loading activity history: $e');
-    }
-    _isLoading = false;
-    notifyListeners();
+  ActivityProvider(this._recorder, this._historyProvider) {
+    _recorder.onStateChanged = notifyListeners;
   }
 
-  Future<Activity?> startActivity(String type) async {
-    try {
-      _currentActivity = await _service.startActivity(type);
-      _isTracking = true;
-      _liveDistance = 0;
-      _liveDuration = 0;
-      _locationBuffer.clear();
-      _startLocationTracking();
-      _startDurationTimer();
-      notifyListeners();
-      return _currentActivity;
-    } catch (e) {
-      debugPrint('Error starting activity: $e');
-      return null;
-    }
-  }
+  // ============ STATE GETTERS ============
 
-  Future<void> pauseActivity() async {
-    if (_currentActivity == null) return;
-    try {
-      _currentActivity = await _service.pauseActivity(_currentActivity!.id);
-      _stopLocationTracking();
-      _durationTimer?.cancel();
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Error pausing activity: $e');
-    }
-  }
+  Activity? get currentActivity => _recorder.currentActivity;
+  bool get isTracking => _recorder.isTracking;
+  bool get isPaused => _recorder.isPaused;
+  double get liveDistance => _recorder.liveDistance;
+  int get liveDuration => _recorder.liveDuration;
+  List<Position> get routePoints => _recorder.routePoints;
+  String? get activityType => _recorder.activityType;
 
-  Future<void> resumeActivity() async {
-    if (_currentActivity == null) return;
-    try {
-      _currentActivity = await _service.resumeActivity(_currentActivity!.id);
-      _startLocationTracking();
-      _startDurationTimer();
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Error resuming activity: $e');
-    }
-  }
+  // ============ ACTIONS ============
 
-  Future<Activity?> stopActivity() async {
-    if (_currentActivity == null) return null;
-    try {
-      // Flush any buffered locations
-      await _flushLocationBuffer();
-      final result = await _service.stopActivity(_currentActivity!.id);
-      _currentActivity = null;
-      _isTracking = false;
-      _stopLocationTracking();
-      _durationTimer?.cancel();
-      await loadHistory();
-      notifyListeners();
-      return result;
-    } catch (e) {
-      debugPrint('Error stopping activity: $e');
-      return null;
-    }
-  }
+  Future<bool> start(String type) => _recorder.start(type);
 
-  void _startLocationTracking() {
-    _locationTimer?.cancel();
-    // Solo run: batch every 30 seconds
-    _locationTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _captureAndSendLocation();
-    });
-    // Capture first location immediately
-    _captureAndSendLocation();
-  }
+  Future<void> pause() => _recorder.pause();
 
-  void _stopLocationTracking() {
-    _locationTimer?.cancel();
-    _locationTimer = null;
-  }
+  Future<void> resume() => _recorder.resume();
 
-  void _startDurationTimer() {
-    _durationTimer?.cancel();
-    _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      _liveDuration++;
-      notifyListeners();
-    });
-  }
-
-  Future<void> _captureAndSendLocation() async {
-    if (_currentActivity == null) return;
-    try {
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      );
-      final point = LocationPointData(
-        latitude: position.latitude,
-        longitude: position.longitude,
-        altitude: position.altitude,
-      );
-      _locationBuffer.add(point);
-
-      if (_locationBuffer.length >= 5) {
-        await _flushLocationBuffer();
-      }
-    } catch (e) {
-      debugPrint('Error capturing location: $e');
-    }
-  }
-
-  Future<void> _flushLocationBuffer() async {
-    if (_locationBuffer.isEmpty || _currentActivity == null) return;
-    try {
-      final points = List<LocationPointData>.from(_locationBuffer);
-      _locationBuffer.clear();
-      _currentActivity = await _service.addLocations(_currentActivity!.id, points);
-      _liveDistance = _currentActivity!.distanceKm;
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Error flushing location buffer: $e');
-    }
+  Future<Activity?> stop() async {
+    final result = await _recorder.stop();
+    // Refresh history silently after stop
+    await _historyProvider.refreshAfterStop();
+    return result;
   }
 
   @override
   void dispose() {
-    _locationTimer?.cancel();
-    _durationTimer?.cancel();
+    _recorder.dispose();
     super.dispose();
   }
 }

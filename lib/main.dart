@@ -5,12 +5,15 @@ import 'data/providers/auth_provider.dart';
 import 'data/providers/connectivity_provider.dart';
 import 'data/providers/steps_provider.dart';
 import 'data/providers/activity_provider.dart';
+import 'data/providers/activity_history_provider.dart';
 import 'data/providers/fitness_provider.dart';
 import 'data/providers/groups_provider.dart';
 import 'data/providers/notification_provider.dart';
 import 'data/services/step_service.dart';
 import 'data/services/step_sync_service.dart';
 import 'data/services/activity_service.dart';
+import 'data/services/activity_recorder.dart';
+import 'data/services/location_tracker.dart';
 import 'data/services/workout_service.dart';
 import 'data/services/friendship_service.dart';
 import 'data/services/club_service.dart';
@@ -36,7 +39,18 @@ void main() {
           final stepApi = StepApiService(apiClient);
           return StepsProvider(stepApi, StepSyncService(stepApi, apiClient));
         }),
-        ChangeNotifierProvider(create: (_) => ActivityProvider(ActivityApiService(apiClient))),
+        ChangeNotifierProvider(create: (_) {
+          final activityApi = ActivityApiService(apiClient);
+          return ActivityHistoryProvider(activityApi);
+        }),
+        ChangeNotifierProxyProvider<ActivityHistoryProvider, ActivityProvider>(
+          create: (ctx) {
+            final activityApi = ActivityApiService(apiClient);
+            final recorder = ActivityRecorder(activityApi, GeolocatorLocationTracker());
+            return ActivityProvider(recorder, ctx.read<ActivityHistoryProvider>());
+          },
+          update: (ctx, history, previous) => previous!,
+        ),
         ChangeNotifierProvider(
           create: (_) => FitnessProvider(
             WorkoutApiService(apiClient),
