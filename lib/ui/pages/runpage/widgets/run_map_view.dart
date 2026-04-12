@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+import '../../../../data/models/map_point.dart';
 
 enum CameraMode {
   /// User can pan freely. No auto-follow.
@@ -13,7 +13,7 @@ enum CameraMode {
 }
 
 /// Map-implementation-agnostic controller.
-/// When swapping to MapBox, only the implementation inside RunMapView changes.
+/// To swap maps, only this widget's internals change — the controller API stays.
 class RunMapViewController {
   _RunMapViewState? _state;
 
@@ -21,15 +21,16 @@ class RunMapViewController {
   void _detach() => _state = null;
 
   /// Force-recenter the map on the given position.
-  void recenterTo(LatLng position, {double zoom = 16}) {
+  void recenterTo(MapPoint position, {double zoom = 17}) {
     _state?._recenterTo(position, zoom);
   }
 }
 
-/// Pure display widget. Render flutter_map now, easy to swap to MapBox.
+/// MapBox-backed map view. The public API uses MapPoint to stay
+/// implementation-agnostic. Conversion to MapBox types happens internally.
 class RunMapView extends StatefulWidget {
-  final LatLng? currentPosition;
-  final List<LatLng> routePoints;
+  final MapPoint? currentPosition;
+  final List<MapPoint> routePoints;
   final bool isLoading;
   final String? error;
   final VoidCallback? onRetry;
@@ -41,6 +42,9 @@ class RunMapView extends StatefulWidget {
 
   /// Zoom level when auto-following during recording.
   static const double recordingZoom = 17.5;
+
+  /// Pitch in locked (recording) mode for a 3D-perspective navigation feel.
+  static const double recordingPitch = 50.0;
 
   /// Default zoom in idle (free) mode.
   static const double idleZoom = 16.0;
@@ -61,8 +65,11 @@ class RunMapView extends StatefulWidget {
 }
 
 class _RunMapViewState extends State<RunMapView> {
-  final MapController _mapController = MapController();
-  bool _hasInitiallyCentered = false;
+  MapboxMap? _mapboxMap;
+  PolylineAnnotationManager? _polylineManager;
+  PolylineAnnotation? _currentPolyline;
+
+  bool _styleReady = false;
   bool _autoFollowSuspended = false;
   Timer? _resumeFollowTimer;
 
@@ -80,28 +87,24 @@ class _RunMapViewState extends State<RunMapView> {
       widget.controller?._attach(this);
     }
 
-    // Camera mode just switched to locked → recenter immediately and zoom in.
-    if (widget.cameraMode == CameraMode.locked &&
-        oldWidget.cameraMode != CameraMode.locked &&
-        widget.currentPosition != null) {
-      _autoFollowSuspended = false;
-      _mapController.move(widget.currentPosition!, RunMapView.recordingZoom);
+    if (!_styleReady) return;
+
+    // Camera mode changed → re-apply
+    if (widget.cameraMode != oldWidget.cameraMode) {
+      _applyCameraMode();
     }
 
-    // Camera mode just switched to free → zoom out.
-    if (widget.cameraMode == CameraMode.free &&
-        oldWidget.cameraMode != CameraMode.free &&
-        widget.currentPosition != null) {
-      _mapController.move(widget.currentPosition!, RunMapView.idleZoom);
-    }
-
-    // Auto-follow in locked mode
+    // Auto-follow on currentPosition change in locked mode
     if (widget.cameraMode == CameraMode.locked &&
         widget.currentPosition != null &&
         widget.currentPosition != oldWidget.currentPosition &&
-        !_autoFollowSuspended &&
-        _hasInitiallyCentered) {
-      _mapController.move(widget.currentPosition!, _mapController.camera.zoom);
+        !_autoFollowSuspended) {
+      _moveCamera(widget.currentPosition!);
+    }
+
+    // Route changed → redraw polyline
+    if (!_listEquals(widget.routePoints, oldWidget.routePoints)) {
+      _updatePolyline();
     }
   }
 
@@ -112,27 +115,133 @@ class _RunMapViewState extends State<RunMapView> {
     super.dispose();
   }
 
-  void _recenterTo(LatLng position, double zoom) {
-    _autoFollowSuspended = false;
-    _resumeFollowTimer?.cancel();
-    _mapController.move(position, zoom);
+  // ============ MAP LIFECYCLE ============
+
+  Future<void> _onMapCreated(MapboxMap mapboxMap) async {
+    _mapboxMap = mapboxMap;
+
+    // Show user location dot (driven by OS GPS)
+    await mapboxMap.location.updateSettings(
+      LocationComponentSettings(
+        enabled: true,
+        pulsingEnabled: true,
+        pulsingColor: 0xFF6B5FFF,
+      ),
+    );
+
+    // Hide default UI elements (we have our own)
+    await mapboxMap.scaleBar.updateSettings(ScaleBarSettings(enabled: false));
+    await mapboxMap.compass.updateSettings(CompassSettings(enabled: false));
+    await mapboxMap.attribution.updateSettings(AttributionSettings(
+      marginBottom: 100, // push attribution above bottom nav
+    ));
+
+    // Polyline manager for the route
+    _polylineManager = await mapboxMap.annotations.createPolylineAnnotationManager();
+
+    setState(() => _styleReady = true);
+
+    // Apply current state
+    _applyCameraMode();
+    if (widget.routePoints.isNotEmpty) {
+      _updatePolyline();
+    }
   }
 
-  void _onPositionChanged(MapCamera camera, bool hasGesture) {
-    if (!hasGesture) return;
-    if (widget.cameraMode != CameraMode.locked) return;
+  void _onCameraChange(CameraChangedEventData data) {
+    // We can't easily detect "user gesture" from this callback in v2.
+    // Soft-lock is handled via gesture listeners below.
+  }
 
-    // User panned during locked mode → suspend auto-follow temporarily.
+  // ============ CAMERA ============
+
+  void _applyCameraMode() {
+    if (_mapboxMap == null || widget.currentPosition == null) return;
+    final pos = widget.currentPosition!;
+    final isLocked = widget.cameraMode == CameraMode.locked;
+
+    _mapboxMap!.flyTo(
+      CameraOptions(
+        center: Point(coordinates: Position(pos.lon, pos.lat)),
+        zoom: isLocked ? RunMapView.recordingZoom : RunMapView.idleZoom,
+        pitch: isLocked ? RunMapView.recordingPitch : 0.0,
+        bearing: 0,
+      ),
+      MapAnimationOptions(duration: 600),
+    );
+  }
+
+  void _moveCamera(MapPoint p) {
+    if (_mapboxMap == null) return;
+    _mapboxMap!.easeTo(
+      CameraOptions(
+        center: Point(coordinates: Position(p.lon, p.lat)),
+      ),
+      MapAnimationOptions(duration: 300),
+    );
+  }
+
+  void _recenterTo(MapPoint p, double zoom) {
+    _autoFollowSuspended = false;
+    _resumeFollowTimer?.cancel();
+    if (_mapboxMap == null) return;
+    _mapboxMap!.flyTo(
+      CameraOptions(
+        center: Point(coordinates: Position(p.lon, p.lat)),
+        zoom: zoom,
+      ),
+      MapAnimationOptions(duration: 500),
+    );
+  }
+
+  void _onUserGesture() {
+    if (widget.cameraMode != CameraMode.locked) return;
     _autoFollowSuspended = true;
     _resumeFollowTimer?.cancel();
     _resumeFollowTimer = Timer(RunMapView.softLockTimeout, () {
       if (!mounted) return;
       _autoFollowSuspended = false;
       if (widget.currentPosition != null) {
-        _mapController.move(widget.currentPosition!, _mapController.camera.zoom);
+        _moveCamera(widget.currentPosition!);
       }
     });
   }
+
+  // ============ POLYLINE ============
+
+  Future<void> _updatePolyline() async {
+    if (_polylineManager == null) return;
+
+    if (_currentPolyline != null) {
+      await _polylineManager!.delete(_currentPolyline!);
+      _currentPolyline = null;
+    }
+
+    if (widget.routePoints.length < 2) return;
+
+    final coords =
+        widget.routePoints.map((p) => Position(p.lon, p.lat)).toList();
+
+    _currentPolyline = await _polylineManager!.create(
+      PolylineAnnotationOptions(
+        geometry: LineString(coordinates: coords),
+        lineColor: 0xFF6B5FFF,
+        lineWidth: 5.0,
+      ),
+    );
+  }
+
+  // ============ HELPERS ============
+
+  bool _listEquals(List<MapPoint> a, List<MapPoint> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  // ============ BUILD ============
 
   @override
   Widget build(BuildContext context) {
@@ -165,73 +274,20 @@ class _RunMapViewState extends State<RunMapView> {
       );
     }
 
-    if (!_hasInitiallyCentered) {
-      _hasInitiallyCentered = true;
-    }
+    final initial = widget.currentPosition!;
+    final isLocked = widget.cameraMode == CameraMode.locked;
 
-    final initialZoom = widget.cameraMode == CameraMode.locked
-        ? RunMapView.recordingZoom
-        : RunMapView.idleZoom;
-
-    return FlutterMap(
-      mapController: _mapController,
-      options: MapOptions(
-        initialCenter: widget.currentPosition!,
-        initialZoom: initialZoom,
-        onPositionChanged: _onPositionChanged,
+    return MapWidget(
+      cameraOptions: CameraOptions(
+        center: Point(coordinates: Position(initial.lon, initial.lat)),
+        zoom: isLocked ? RunMapView.recordingZoom : RunMapView.idleZoom,
+        pitch: isLocked ? RunMapView.recordingPitch : 0.0,
       ),
-      children: [
-        TileLayer(
-          urlTemplate:
-              'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-          subdomains: const ['a', 'b', 'c', 'd'],
-          userAgentPackageName: 'com.trackon.mobile',
-          maxZoom: 20,
-        ),
-        if (widget.routePoints.length >= 2)
-          PolylineLayer(
-            polylines: [
-              Polyline(
-                points: widget.routePoints,
-                strokeWidth: 4.0,
-                color: const Color(0xFF6B5FFF),
-              ),
-            ],
-          ),
-        MarkerLayer(
-          markers: [
-            Marker(
-              point: widget.currentPosition!,
-              width: 40,
-              height: 40,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6B5FFF).withAlpha(50),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Container(
-                    width: 18,
-                    height: 18,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF6B5FFF),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 3),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF6B5FFF).withAlpha(100),
-                          blurRadius: 8,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
+      styleUri: MapboxStyles.STANDARD,
+      onMapCreated: _onMapCreated,
+      onCameraChangeListener: _onCameraChange,
+      onScrollListener: (_) => _onUserGesture(),
+      onTapListener: (_) => _onUserGesture(),
     );
   }
 }

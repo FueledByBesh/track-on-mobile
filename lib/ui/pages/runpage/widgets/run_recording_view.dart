@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:trackon_mobile/data/models/map_point.dart';
 import 'run_map_view.dart';
 
 /// Recording state UI: locked-camera map, big stats overlay, pause/stop controls.
 class RunRecordingView extends StatelessWidget {
-  final LatLng? currentPosition;
-  final List<LatLng> routePoints;
+  final MapPoint? currentPosition;
+  final List<MapPoint> routePoints;
   final RunMapViewController mapController;
   final int durationSeconds;
   final double distanceKm;

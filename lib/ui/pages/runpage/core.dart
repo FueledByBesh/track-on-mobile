@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
+import 'package:trackon_mobile/data/models/map_point.dart';
 import 'package:trackon_mobile/data/providers/activity_history_provider.dart';
 import 'package:trackon_mobile/data/providers/activity_provider.dart';
 import 'package:trackon_mobile/data/services/location_tracker.dart';
@@ -22,7 +22,7 @@ class _RunPageState extends State<RunPage> {
   final RunMapViewController _mapController = RunMapViewController();
   final LocationTracker _initialLocationTracker = GeolocatorLocationTracker();
 
-  LatLng? _initialPosition;
+  MapPoint? _initialPosition;
   bool _loadingInitial = true;
   String? _locationError;
   ActivityType _selectedType = ActivityType.running;
@@ -41,7 +41,7 @@ class _RunPageState extends State<RunPage> {
     if (!mounted) return;
     if (position != null) {
       setState(() {
-        _initialPosition = LatLng(position.latitude, position.longitude);
+        _initialPosition = MapPoint(position.latitude, position.longitude);
         _loadingInitial = false;
       });
     } else {
@@ -88,10 +88,10 @@ class _RunPageState extends State<RunPage> {
   void _recenter() {
     final provider = context.read<ActivityProvider>();
     final routePoints = provider.routePoints;
-    LatLng? target;
+    MapPoint? target;
     if (routePoints.isNotEmpty) {
       final last = routePoints.last;
-      target = LatLng(last.latitude, last.longitude);
+      target = MapPoint(last.latitude, last.longitude);
     } else if (_initialPosition != null) {
       target = _initialPosition;
     }
@@ -113,10 +113,10 @@ class _RunPageState extends State<RunPage> {
     final isTracking = activityProvider.isTracking;
 
     final routePoints = activityProvider.routePoints
-        .map((p) => LatLng(p.latitude, p.longitude))
+        .map((p) => MapPoint(p.latitude, p.longitude))
         .toList();
 
-    LatLng? currentPosition;
+    MapPoint? currentPosition;
     if (routePoints.isNotEmpty) {
       currentPosition = routePoints.last;
     } else {

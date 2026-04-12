@@ -19,10 +19,20 @@ import 'data/services/friendship_service.dart';
 import 'data/services/club_service.dart';
 import 'data/services/post_service.dart';
 import 'data/services/notification_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'ui/myapp.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables from .env (git-ignored)
+  await dotenv.load(fileName: '.env');
+
+  // Initialize MapBox with the public access token
+  final mapboxToken = dotenv.env['MAPBOX_PUBLIC_TOKEN'] ?? '';
+  MapboxOptions.setAccessToken(mapboxToken);
+
   final apiClient = ApiClient();
   final connectivityProvider = ConnectivityProvider();
 
@@ -35,19 +45,29 @@ void main() {
       providers: [
         ChangeNotifierProvider.value(value: connectivityProvider),
         ChangeNotifierProvider(create: (_) => AuthProvider(apiClient)),
-        ChangeNotifierProvider(create: (_) {
-          final stepApi = StepApiService(apiClient);
-          return StepsProvider(stepApi, StepSyncService(stepApi, apiClient));
-        }),
-        ChangeNotifierProvider(create: (_) {
-          final activityApi = ActivityApiService(apiClient);
-          return ActivityHistoryProvider(activityApi);
-        }),
+        ChangeNotifierProvider(
+          create: (_) {
+            final stepApi = StepApiService(apiClient);
+            return StepsProvider(stepApi, StepSyncService(stepApi, apiClient));
+          },
+        ),
+        ChangeNotifierProvider(
+          create: (_) {
+            final activityApi = ActivityApiService(apiClient);
+            return ActivityHistoryProvider(activityApi);
+          },
+        ),
         ChangeNotifierProxyProvider<ActivityHistoryProvider, ActivityProvider>(
           create: (ctx) {
             final activityApi = ActivityApiService(apiClient);
-            final recorder = ActivityRecorder(activityApi, GeolocatorLocationTracker());
-            return ActivityProvider(recorder, ctx.read<ActivityHistoryProvider>());
+            final recorder = ActivityRecorder(
+              activityApi,
+              GeolocatorLocationTracker(),
+            );
+            return ActivityProvider(
+              recorder,
+              ctx.read<ActivityHistoryProvider>(),
+            );
           },
           update: (ctx, history, previous) => previous!,
         ),
@@ -66,7 +86,8 @@ void main() {
           ),
         ),
         ChangeNotifierProvider(
-          create: (_) => NotificationProvider(NotificationApiService(apiClient)),
+          create: (_) =>
+              NotificationProvider(NotificationApiService(apiClient)),
         ),
       ],
       child: const MyApp(),

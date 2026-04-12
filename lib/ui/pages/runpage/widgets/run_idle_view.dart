@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:trackon_mobile/data/models/map_point.dart';
 import 'activity_type_selector.dart';
 import 'run_map_view.dart';
 
 /// Idle state UI: free-pan map with floating action buttons.
 class RunIdleView extends StatelessWidget {
-  final LatLng? currentPosition;
+  final MapPoint? currentPosition;
   final bool isLoading;
   final String? error;
   final VoidCallback onRetry;

@@ -1,7 +1,28 @@
+// Read MapBox download token from local.properties (git-ignored)
+// Fall back to env var so CI builds work without a local file.
+val mapboxDownloadsToken: String = run {
+    val props = java.util.Properties()
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { props.load(it) }
+    props.getProperty("MAPBOX_DOWNLOADS_TOKEN")
+        ?: System.getenv("MAPBOX_DOWNLOADS_TOKEN")
+        ?: ""
+}
+
 allprojects {
     repositories {
         google()
         mavenCentral()
+        maven {
+            url = uri("https://api.mapbox.com/downloads/v2/releases/maven")
+            authentication {
+                create<BasicAuthentication>("basic")
+            }
+            credentials {
+                username = "mapbox"
+                password = mapboxDownloadsToken
+            }
+        }
     }
 }
 
