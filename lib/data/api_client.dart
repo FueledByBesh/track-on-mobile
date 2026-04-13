@@ -18,6 +18,12 @@ class ApiClient {
   // Set after providers are created in main.dart
   ConnectivityProvider? connectivityProvider;
 
+  /// Called by the interceptor when it has definitively given up on the stored
+  /// tokens (refresh rejected by backend, tokens cleared from secure storage).
+  /// AuthProvider wires this so the UI can react immediately instead of
+  /// limping along with a silent-dead session.
+  VoidCallback? onAuthExpired;
+
   ApiClient() {
     dio = Dio(
       BaseOptions(
@@ -73,6 +79,7 @@ class ApiClient {
             final refreshed = await tryRefresh();
             if (!refreshed) {
               await clearTokens();
+              onAuthExpired?.call();
               return handler.next(error);
             }
 
@@ -83,6 +90,7 @@ class ApiClient {
             return handler.resolve(response);
           } catch (_) {
             await clearTokens();
+            onAuthExpired?.call();
             return handler.next(error);
           }
         },

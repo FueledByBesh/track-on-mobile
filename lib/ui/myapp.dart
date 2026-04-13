@@ -11,6 +11,11 @@ import 'package:trackon_mobile/ui/pages/fitnesspage/core.dart';
 import 'package:trackon_mobile/ui/pages/groupspage/core.dart';
 import 'package:trackon_mobile/ui/pages/runpage/core.dart';
 
+/// Exposed so code outside a Scaffold (e.g. AuthWrapper while showing the
+/// login page) can still push SnackBars.
+final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
+    GlobalKey<ScaffoldMessengerState>();
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -26,6 +31,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'TrackOn',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: rootScaffoldMessengerKey,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
@@ -69,6 +75,21 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
+
+    // One-shot "session expired" toast. Drained after it fires so the next
+    // rebuild doesn't re-show it.
+    if (authProvider.showExpiredMessage) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        rootScaffoldMessengerKey.currentState?.showSnackBar(
+          const SnackBar(
+            content: Text('Session expired — please sign in again.'),
+            backgroundColor: Color(0xFF1C2A3A),
+            duration: Duration(seconds: 4),
+          ),
+        );
+        authProvider.consumeExpiredMessage();
+      });
+    }
 
     if (authProvider.isLoading) {
       return const Scaffold(

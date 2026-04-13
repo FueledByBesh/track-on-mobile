@@ -45,7 +45,16 @@ Future<void> main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: connectivityProvider),
-        ChangeNotifierProvider(create: (_) => AuthProvider(apiClient)),
+        ChangeNotifierProvider(
+          create: (_) {
+            final authProvider = AuthProvider(apiClient);
+            // When the interceptor clears tokens on a refresh failure, the
+            // whole UI needs to bounce to the login page. Wire it here,
+            // once both objects exist.
+            apiClient.onAuthExpired = authProvider.handleAuthExpired;
+            return authProvider;
+          },
+        ),
         ChangeNotifierProvider(
           create: (_) {
             final stepApi = StepApiService(apiClient);

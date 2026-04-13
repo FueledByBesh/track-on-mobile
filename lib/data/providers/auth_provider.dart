@@ -10,6 +10,12 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isLoggedIn = false;
 
+  /// One-shot flag: true when the current session was ended by the
+  /// interceptor (refresh rejected), false when the user intentionally
+  /// signed out or never had a session. Consumed by AuthWrapper to decide
+  /// whether to show a "session expired" SnackBar.
+  bool _showExpiredMessage = false;
+
   // Google OAuth configuration
   static const String _googleAuthUrl =
       'https://accounts.google.com/o/oauth2/v2/auth';
@@ -22,26 +28,51 @@ class AuthProvider extends ChangeNotifier {
 
   bool get isLoading => _isLoading;
   bool get isLoggedIn => _isLoggedIn;
+  bool get showExpiredMessage => _showExpiredMessage;
+
+  /// Called by the ApiClient interceptor when both access and refresh tokens
+  /// have been rejected and secure storage has been cleared. Flips the UI
+  /// into the logged-out state and queues a one-shot "session expired" toast
+  /// for AuthWrapper to show.
+  void handleAuthExpired() {
+    final wasLoggedIn = _isLoggedIn;
+    _isLoggedIn = false;
+    if (wasLoggedIn) {
+      _showExpiredMessage = true;
+    }
+    notifyListeners();
+  }
+
+  /// AuthWrapper calls this after showing the expired-session toast so the
+  /// same message doesn't fire twice on the next rebuild.
+  void consumeExpiredMessage() {
+    _showExpiredMessage = false;
+  }
 
   /// Check if we have valid tokens on app startup.
-  /// The Dio interceptor auto-refreshes on 401, so a single test request is enough:
-  /// - Access token valid → 200 → logged in
-  /// - Access token expired → interceptor refreshes → retries → 200 → logged in
-  /// - Refresh also fails → interceptor clears tokens → throws → catch → logged out
+  ///
+  /// Stored tokens are the source of truth. If they exist, the user is
+  /// optimistically logged in — even if the backend is unreachable, we
+  /// don't force them through the login flow (offline mode must just work).
+  ///
+  /// The best-effort backend ping exists only to catch the narrow case
+  /// where both tokens are genuinely expired. If that happens, the Dio
+  /// interceptor clears the stored tokens on refresh failure; we re-read
+  /// them afterward to observe what the interceptor decided. Network
+  /// errors, timeouts, and 5xx leave tokens untouched → user stays in.
   Future<void> checkAuth() async {
     _isLoading = true;
     notifyListeners();
 
-    final hasTokens = await ApiClient.hasTokens();
-    if (hasTokens) {
+    _isLoggedIn = await ApiClient.hasTokens();
+
+    if (_isLoggedIn) {
       try {
         await _api.dio.get('/api/steps/last-sync');
-        _isLoggedIn = true;
       } catch (_) {
-        // Both access and refresh tokens are invalid/expired
-        await ApiClient.clearTokens();
-        debugPrint("Tokens cleared");
-        _isLoggedIn = false;
+        // Interceptor is the only authority on token clearing — re-read
+        // storage to find out what it decided.
+        _isLoggedIn = await ApiClient.hasTokens();
       }
     }
 
