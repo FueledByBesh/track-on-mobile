@@ -167,7 +167,7 @@ class StepDatabase {
       'steps_raw',
       where: 'date = ?',
       whereArgs: [date],
-      orderBy: 'start_time ASC',
+      orderBy: 'start_time_utc ASC',
     );
   }
 
