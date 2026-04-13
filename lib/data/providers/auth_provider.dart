@@ -174,6 +174,14 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    // Best-effort backend cleanup: revoke Google tokens + clear DB rows.
+    // If we're offline or the backend is down, just clear local state —
+    // the user tapped "sign out" and they expect to be logged out.
+    try {
+      await _api.dio.post('/auth/logout');
+    } catch (e) {
+      debugPrint('Logout endpoint failed, clearing local state anyway: $e');
+    }
     await ApiClient.clearTokens();
     _isLoggedIn = false;
     notifyListeners();
