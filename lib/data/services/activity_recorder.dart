@@ -2,123 +2,248 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+
+import '../local/activity_database.dart';
 import '../models/activity.dart';
-import 'activity_service.dart';
+import '../models/map_point.dart';
+import 'location_filter.dart';
 import 'location_tracker.dart';
 
-/// Owns the in-progress activity state.
-/// Single source of truth for: current activity, route points, live distance,
-/// live duration, pause state. Subscribes to a single GPS stream.
+/// Owns an in-progress activity. Local-first: every accepted GPS fix is
+/// persisted to SQLite before anything else. In-memory aggregates exist only
+/// to feed the UI instantly — SQLite is the source of truth and survives
+/// app kills, crashes, and reboots.
+///
+/// Backend is untouched during recording. The finalized session is uploaded
+/// via ActivitySyncService after [stop].
+///
+/// Designed so a foreground-service GPS source can be dropped in without
+/// touching the recorder: anything implementing [LocationTracker] works.
 class ActivityRecorder {
-  final ActivityApiService _api;
   final LocationTracker _locationTracker;
 
-  ActivityRecorder(this._api, this._locationTracker);
+  ActivityRecorder(this._locationTracker);
 
-  // ============ STATE ============
+  // ============ CALLBACK ============
 
-  Activity? _currentActivity;
-  bool _isPaused = false;
-  String? _activityType;
-
-  final List<Position> _routePoints = [];
-  final List<Position> _backendBuffer = [];
-
-  double _liveDistance = 0; // km, computed locally for instant updates
-  int _liveDuration = 0; // seconds
-
-  StreamSubscription<Position>? _locationSub;
-  Timer? _durationTimer;
-  Timer? _flushTimer;
-
-  /// Notify the wrapping provider that internal state changed.
+  /// Notifies the wrapping provider. Fired on:
+  /// - state transitions (start / pause / resume / stop)
+  /// - each accepted point
+  /// - once per second while recording (for derived duration)
   VoidCallback? onStateChanged;
 
-  // ============ GETTERS ============
+  // ============ CURRENT SESSION STATE ============
 
-  Activity? get currentActivity => _currentActivity;
-  bool get isTracking => _currentActivity != null;
-  bool get isPaused => _isPaused;
-  double get liveDistance => _liveDistance;
-  int get liveDuration => _liveDuration;
-  List<Position> get routePoints => List.unmodifiable(_routePoints);
-  String? get activityType => _activityType;
+  _Session? _session;
+
+  // Route kept in memory in MapPoint form so the UI doesn't depend on
+  // geolocator types. Populated from DB inserts.
+  final List<MapPoint> _routePoints = [];
+
+  // Latest accepted raw position — exposed so the map can center on it
+  // even before any route has accumulated.
+  MapPoint? _lastPosition;
+
+  // Monotonic seq within the session.
+  int _nextSeq = 0;
+
+  // Incremented on each resume. Lets the renderer draw the polyline as
+  // disconnected segments across pause gaps.
+  int _currentSegment = 0;
+
+  // Pause bookkeeping.
+  int _accumulatedPausedMs = 0;
+  int? _currentPauseStartMs;
+  int? _currentPauseRowId;
+
+  // Live-computed distance (km). Also written to DB after each accepted point.
+  double _liveDistanceKm = 0;
+
+  // Filter is created per-session so state resets cleanly.
+  LocationFilter? _filter;
+
+  // Subscription to the tracker's stream and the 1s UI tick.
+  StreamSubscription<Position>? _locationSub;
+  Timer? _tickTimer;
+
+  // ============ PUBLIC GETTERS ============
+
+  bool get isTracking => _session != null;
+  bool get isPaused => _session?.status == ActivityDatabase.statusPaused;
+  String? get activityType => _session?.activityType;
+  List<MapPoint> get routePoints => List.unmodifiable(_routePoints);
+  MapPoint? get lastPosition => _lastPosition;
+  double get liveDistanceKm => _liveDistanceKm;
+
+  /// Seconds elapsed since start, excluding time spent paused.
+  /// Derived from wall clock — unaffected by Timer drift or app suspension.
+  int get liveDurationSeconds {
+    if (_session == null) return 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    var paused = _accumulatedPausedMs;
+    if (_currentPauseStartMs != null) {
+      paused += now - _currentPauseStartMs!;
+    }
+    final elapsedMs = now - _session!.startedAtMs - paused;
+    return elapsedMs < 0 ? 0 : elapsedMs ~/ 1000;
+  }
 
   // ============ LIFECYCLE ============
 
-  Future<bool> start(String type) async {
-    if (_currentActivity != null) return false;
+  /// Start a new local session. Returns false if one is already active.
+  Future<bool> start(String activityType) async {
+    if (_session != null) return false;
 
-    try {
-      _currentActivity = await _api.startActivity(type);
-      _activityType = type;
-      _isPaused = false;
-      _liveDistance = 0;
-      _liveDuration = 0;
-      _routePoints.clear();
-      _backendBuffer.clear();
+    final id = _generateId();
+    final nowLocal = DateTime.now();
+    final nowMs = nowLocal.millisecondsSinceEpoch;
 
-      _startLocationStream();
-      _startDurationTimer();
-      _startFlushTimer();
+    await ActivityDatabase.insertSession(
+      id: id,
+      activityType: activityType,
+      startedAt: nowMs,
+      startedAtLocal: _localIso(nowLocal),
+    );
 
-      _notify();
-      return true;
-    } catch (e) {
-      debugPrint('Error starting activity: $e');
-      return false;
-    }
+    _session = _Session(
+      id: id,
+      activityType: activityType,
+      startedAtMs: nowMs,
+      status: ActivityDatabase.statusRecording,
+    );
+    _routePoints.clear();
+    _lastPosition = null;
+    _nextSeq = 0;
+    _currentSegment = 0;
+    _accumulatedPausedMs = 0;
+    _currentPauseStartMs = null;
+    _currentPauseRowId = null;
+    _liveDistanceKm = 0;
+    _filter = LocationFilter(
+      maxSpeedMetersPerSec: _maxSpeedForType(activityType),
+    );
+
+    _startLocationStream();
+    _startTickTimer();
+    _notify();
+    return true;
   }
 
   Future<void> pause() async {
-    if (_currentActivity == null || _isPaused) return;
-    try {
-      _currentActivity = await _api.pauseActivity(_currentActivity!.id);
-      _isPaused = true;
-      _durationTimer?.cancel();
-      _notify();
-    } catch (e) {
-      debugPrint('Error pausing activity: $e');
-    }
+    if (_session == null || isPaused) return;
+
+    _currentPauseStartMs = DateTime.now().millisecondsSinceEpoch;
+    _currentPauseRowId = await ActivityDatabase.openPause(
+      sessionId: _session!.id,
+      pauseStart: _currentPauseStartMs!,
+    );
+    _session = _session!.copyWith(status: ActivityDatabase.statusPaused);
+    await ActivityDatabase.updateSessionStatus(
+      _session!.id,
+      ActivityDatabase.statusPaused,
+    );
+
+    // Cut the GPS subscription entirely — saves battery.
+    await _stopLocationStream();
+    _notify();
   }
 
   Future<void> resume() async {
-    if (_currentActivity == null || !_isPaused) return;
-    try {
-      _currentActivity = await _api.resumeActivity(_currentActivity!.id);
-      _isPaused = false;
-      _startDurationTimer();
-      _notify();
-    } catch (e) {
-      debugPrint('Error resuming activity: $e');
+    if (_session == null || !isPaused) return;
+
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (_currentPauseStartMs != null && _currentPauseRowId != null) {
+      _accumulatedPausedMs += nowMs - _currentPauseStartMs!;
+      await ActivityDatabase.closePause(
+        pauseRowId: _currentPauseRowId!,
+        pauseEnd: nowMs,
+      );
     }
+    _currentPauseStartMs = null;
+    _currentPauseRowId = null;
+
+    _session = _session!.copyWith(status: ActivityDatabase.statusRecording);
+    await ActivityDatabase.updateSessionStatus(
+      _session!.id,
+      ActivityDatabase.statusRecording,
+    );
+
+    // New segment → the next accepted point won't be connected to the
+    // pre-pause point in the rendered polyline.
+    _currentSegment++;
+    _filter?.beginWarmup();
+
+    _startLocationStream();
+    _notify();
   }
 
-  Future<Activity?> stop() async {
-    if (_currentActivity == null) return null;
-    try {
-      await _flushBackendBuffer();
-      final result = await _api.stopActivity(_currentActivity!.id);
-      _cleanup();
-      _notify();
-      return result;
-    } catch (e) {
-      debugPrint('Error stopping activity: $e');
-      _cleanup();
-      _notify();
-      return null;
+  /// Finalize the session. Writes the completed row to SQLite and returns a
+  /// summary. The caller (ActivityProvider) then hands the session to
+  /// ActivitySyncService for upload.
+  Future<CompletedSessionResult?> stop() async {
+    if (_session == null) return null;
+
+    // If we were paused, close the open interval.
+    if (_currentPauseStartMs != null && _currentPauseRowId != null) {
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      _accumulatedPausedMs += nowMs - _currentPauseStartMs!;
+      await ActivityDatabase.closePause(
+        pauseRowId: _currentPauseRowId!,
+        pauseEnd: nowMs,
+      );
     }
+
+    final durationSec = liveDurationSeconds;
+    final endedLocal = DateTime.now();
+    final endedAtMs = endedLocal.millisecondsSinceEpoch;
+
+    await ActivityDatabase.completeSession(
+      id: _session!.id,
+      endedAt: endedAtMs,
+      endedAtLocal: _localIso(endedLocal),
+      distanceKm: _liveDistanceKm,
+      pausedMs: _accumulatedPausedMs,
+    );
+
+    final result = CompletedSessionResult(
+      localId: _session!.id,
+      distanceKm: _liveDistanceKm,
+      durationSeconds: durationSec,
+      avgPaceMinPerKm: _computePaceMinPerKm(durationSec, _liveDistanceKm),
+    );
+
+    await _stopLocationStream();
+    _tickTimer?.cancel();
+    _tickTimer = null;
+    _session = null;
+    _filter = null;
+    _notify();
+    return result;
   }
 
-  void _cleanup() {
-    _currentActivity = null;
-    _activityType = null;
-    _isPaused = false;
-    _stopLocationStream();
-    _durationTimer?.cancel();
-    _durationTimer = null;
-    _flushTimer?.cancel();
-    _flushTimer = null;
+  /// Abandon the current session without uploading. Deletes the local rows.
+  /// Useful if the user explicitly discards a run.
+  Future<void> discard() async {
+    final id = _session?.id;
+    await _stopLocationStream();
+    _tickTimer?.cancel();
+    _tickTimer = null;
+    if (id != null) {
+      await ActivityDatabase.deleteSession(id);
+    }
+    _session = null;
+    _filter = null;
+    _routePoints.clear();
+    _lastPosition = null;
+    _liveDistanceKm = 0;
+    _notify();
+  }
+
+  void dispose() {
+    _locationSub?.cancel();
+    _locationSub = null;
+    _tickTimer?.cancel();
+    _tickTimer = null;
   }
 
   // ============ LOCATION STREAM ============
@@ -127,85 +252,110 @@ class ActivityRecorder {
     _locationSub?.cancel();
     _locationSub = _locationTracker
         .startTracking(distanceFilter: 5)
-        .listen(_onLocationUpdate, onError: (e) {
-      debugPrint('Location stream error: $e');
+        .listen(_onPosition, onError: (e) {
+      debugPrint('ActivityRecorder: location stream error: $e');
     });
   }
 
-  void _stopLocationStream() {
-    _locationSub?.cancel();
+  Future<void> _stopLocationStream() async {
+    await _locationSub?.cancel();
     _locationSub = null;
-    _locationTracker.stopTracking();
+    await _locationTracker.stopTracking();
   }
 
-  void _onLocationUpdate(Position pos) {
-    if (_isPaused || _currentActivity == null) return;
+  Future<void> _onPosition(Position pos) async {
+    if (_session == null || isPaused) return;
+    final filter = _filter;
+    if (filter == null) return;
 
-    if (_routePoints.isNotEmpty) {
-      final prev = _routePoints.last;
-      _liveDistance += _haversine(
-        prev.latitude, prev.longitude,
-        pos.latitude, pos.longitude,
-      );
-    }
+    final outcome = filter.evaluate(pos);
+    if (!outcome.isAccepted) return;
 
-    _routePoints.add(pos);
-    _backendBuffer.add(pos);
+    _liveDistanceKm += outcome.addedKm;
+    _lastPosition = MapPoint(pos.latitude, pos.longitude);
+    _routePoints.add(_lastPosition!);
+
+    final sessionId = _session!.id;
+    final seq = _nextSeq++;
+
+    await ActivityDatabase.insertPoint(
+      sessionId: sessionId,
+      seq: seq,
+      timestamp: pos.timestamp.millisecondsSinceEpoch,
+      lat: pos.latitude,
+      lon: pos.longitude,
+      altitude: pos.altitude,
+      accuracy: pos.accuracy,
+      speed: pos.speed,
+      segmentIndex: _currentSegment,
+    );
+    await ActivityDatabase.updateSessionDistance(sessionId, _liveDistanceKm);
     _notify();
   }
 
-  // ============ TIMERS ============
+  // ============ TICK ============
 
-  void _startDurationTimer() {
-    _durationTimer?.cancel();
-    _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      _liveDuration++;
+  void _startTickTimer() {
+    _tickTimer?.cancel();
+    // Not a stopwatch — just a UI repaint trigger so the derived duration
+    // getter re-renders each second.
+    _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_session == null || isPaused) return;
       _notify();
     });
-  }
-
-  void _startFlushTimer() {
-    _flushTimer?.cancel();
-    _flushTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _flushBackendBuffer();
-    });
-  }
-
-  Future<void> _flushBackendBuffer() async {
-    if (_backendBuffer.isEmpty || _currentActivity == null) return;
-    try {
-      final batch = _backendBuffer
-          .map((p) => LocationPointData(
-                latitude: p.latitude,
-                longitude: p.longitude,
-                altitude: p.altitude,
-              ))
-          .toList();
-      _backendBuffer.clear();
-      await _api.addLocations(_currentActivity!.id, batch);
-    } catch (e) {
-      debugPrint('Error flushing location buffer: $e');
-    }
   }
 
   // ============ HELPERS ============
 
   void _notify() => onStateChanged?.call();
 
-  /// Haversine distance in km.
-  static double _haversine(double lat1, double lon1, double lat2, double lon2) {
-    const earthRadiusKm = 6371.0;
-    final dLat = _toRad(lat2 - lat1);
-    final dLon = _toRad(lon2 - lon1);
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(_toRad(lat1)) * cos(_toRad(lat2)) * sin(dLon / 2) * sin(dLon / 2);
-    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    return earthRadiusKm * c;
+  static double? _computePaceMinPerKm(int durationSec, double distanceKm) {
+    if (distanceKm <= 0 || durationSec <= 0) return null;
+    return (durationSec / 60.0) / distanceKm;
   }
 
-  static double _toRad(double deg) => deg * pi / 180;
-
-  void dispose() {
-    _cleanup();
+  static double _maxSpeedForType(String type) {
+    switch (type) {
+      case 'BIKING':
+        return 25; // ~90 km/h ceiling
+      case 'WALKING':
+        return 4; // ~14 km/h ceiling
+      case 'RUNNING':
+      default:
+        return 10; // ~36 km/h ceiling
+    }
   }
+
+  /// Local wall-clock as ISO-8601 with no offset suffix.
+  /// Dart's DateTime.now() is local; toIso8601String() omits the offset for
+  /// non-UTC instants — exactly the format the backend stores in local_date.
+  static String _localIso(DateTime localDt) => localDt.toIso8601String();
+
+  static final _rand = Random();
+  static String _generateId() {
+    final ts = DateTime.now().millisecondsSinceEpoch.toRadixString(16);
+    final r = _rand.nextInt(0xffffffff).toRadixString(16).padLeft(8, '0');
+    return '$ts-$r';
+  }
+}
+
+class _Session {
+  final String id;
+  final String activityType;
+  final int startedAtMs;
+  final String status;
+
+  const _Session({
+    required this.id,
+    required this.activityType,
+    required this.startedAtMs,
+    required this.status,
+  });
+
+  _Session copyWith({String? status}) => _Session(
+        id: id,
+        activityType: activityType,
+        startedAtMs: startedAtMs,
+        status: status ?? this.status,
+      );
 }

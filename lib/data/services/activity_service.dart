@@ -1,54 +1,34 @@
 import '../api_client.dart';
 import '../models/activity.dart';
 
+/// Thin HTTP surface for activities. In the local-first flow the backend is
+/// a dumb sink: mobile uploads a finalized payload and reads the history.
+/// No per-point streaming, no start/pause/resume round-trips.
 class ActivityApiService {
   final ApiClient _api;
 
   ActivityApiService(this._api);
 
-  Future<Activity> startActivity(String type) async {
-    final response = await _api.dio.post('/api/activities', data: {'type': type});
-    return Activity.fromJson(response.data);
-  }
-
-  Future<Activity> addLocation(String activityId, LocationPointData point) async {
+  /// Upload a completed session. Returns the server-assigned id on success.
+  Future<String> uploadActivity(ActivityUploadPayload payload) async {
     final response = await _api.dio.post(
-      '/api/activities/$activityId/location',
-      data: point.toJson(),
+      '/api/activities',
+      data: payload.toJson(),
     );
-    return Activity.fromJson(response.data);
-  }
-
-  Future<Activity> addLocations(String activityId, List<LocationPointData> points) async {
-    final response = await _api.dio.post(
-      '/api/activities/$activityId/locations',
-      data: points.map((p) => p.toJson()).toList(),
-    );
-    return Activity.fromJson(response.data);
-  }
-
-  Future<Activity> pauseActivity(String activityId) async {
-    final response = await _api.dio.post('/api/activities/$activityId/pause');
-    return Activity.fromJson(response.data);
-  }
-
-  Future<Activity> resumeActivity(String activityId) async {
-    final response = await _api.dio.post('/api/activities/$activityId/resume');
-    return Activity.fromJson(response.data);
-  }
-
-  Future<Activity> stopActivity(String activityId) async {
-    final response = await _api.dio.post('/api/activities/$activityId/stop');
-    return Activity.fromJson(response.data);
+    final data = response.data as Map<String, dynamic>;
+    return data['id'].toString();
   }
 
   Future<List<ActivitySummary>> getAll() async {
     final response = await _api.dio.get('/api/activities');
-    return (response.data as List).map((e) => ActivitySummary.fromJson(e)).toList();
+    final list = response.data as List;
+    return list
+        .map((e) => ActivitySummary.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<Activity> getById(String id) async {
     final response = await _api.dio.get('/api/activities/$id');
-    return Activity.fromJson(response.data);
+    return Activity.fromJson(response.data as Map<String, dynamic>);
   }
 }

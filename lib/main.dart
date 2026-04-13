@@ -13,6 +13,7 @@ import 'data/services/step_service.dart';
 import 'data/services/step_sync_service.dart';
 import 'data/services/activity_service.dart';
 import 'data/services/activity_recorder.dart';
+import 'data/services/activity_sync_service.dart';
 import 'data/services/location_tracker.dart';
 import 'data/services/workout_service.dart';
 import 'data/services/friendship_service.dart';
@@ -60,12 +61,11 @@ Future<void> main() async {
         ChangeNotifierProxyProvider<ActivityHistoryProvider, ActivityProvider>(
           create: (ctx) {
             final activityApi = ActivityApiService(apiClient);
-            final recorder = ActivityRecorder(
-              activityApi,
-              GeolocatorLocationTracker(),
-            );
+            final recorder = ActivityRecorder(GeolocatorLocationTracker());
+            final sync = ActivitySyncService(activityApi);
             return ActivityProvider(
               recorder,
+              sync,
               ctx.read<ActivityHistoryProvider>(),
             );
           },
