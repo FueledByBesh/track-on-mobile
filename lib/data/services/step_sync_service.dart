@@ -58,7 +58,7 @@ class StepSyncService {
     String rangeEnd = DateTime.now().toUtc().toIso8601String();
     // 5. Send raw data to backend
     try {
-      final unsyncedRaw = await _getUnsyncedRaw();
+      final unsyncedRaw = await _getUnsyncedRaw(since: from);
       if (unsyncedRaw.isNotEmpty) {
         await _api.syncSteps(
           unsyncedRaw,
@@ -250,17 +250,11 @@ class StepSyncService {
     return local != null ? DateTime.parse(local) : null;
   }
 
-  Future<List<StepInterval>> _getUnsyncedRaw() async {
-    final lastSyncStr = await StepDatabase.getMeta(
-      StepDatabase.keyLastBackendSync,
-    );
-    final since =
-        lastSyncStr ??
-        DateTime.now()
-            .toUtc()
-            .subtract(const Duration(days: 30))
-            .toIso8601String();
-    final rows = await StepDatabase.getRawSince(since);
+  /// Returns raw intervals newer than [since]. The caller (online flow)
+  /// passes the backend-resolved cutoff so we don't accidentally re-upload
+  /// rows the backend already has.
+  Future<List<StepInterval>> _getUnsyncedRaw({required DateTime since}) async {
+    final rows = await StepDatabase.getRawSince(since.toUtc().toIso8601String());
     return rows
         .map(
           (r) => StepInterval(
