@@ -5,7 +5,7 @@ import 'run_map_view.dart';
 /// Recording state UI: locked-camera map, big stats overlay, pause/stop controls.
 class RunRecordingView extends StatelessWidget {
   final MapPoint? currentPosition;
-  final List<MapPoint> routePoints;
+  final List<List<MapPoint>> routeSegments;
   final RunMapViewController mapController;
   final int durationSeconds;
   final double distanceKm;
@@ -18,7 +18,7 @@ class RunRecordingView extends StatelessWidget {
   const RunRecordingView({
     super.key,
     required this.currentPosition,
-    required this.routePoints,
+    required this.routeSegments,
     required this.mapController,
     required this.durationSeconds,
     required this.distanceKm,
@@ -61,7 +61,7 @@ class RunRecordingView extends StatelessWidget {
             children: [
               RunMapView(
                 currentPosition: currentPosition,
-                routePoints: routePoints,
+                routeSegments: routeSegments,
                 controller: mapController,
                 cameraMode: CameraMode.locked,
               ),

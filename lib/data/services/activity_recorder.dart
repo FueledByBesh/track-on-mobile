@@ -36,9 +36,10 @@ class ActivityRecorder {
 
   _Session? _session;
 
-  // Route kept in memory in MapPoint form so the UI doesn't depend on
-  // geolocator types. Populated from DB inserts.
-  final List<MapPoint> _routePoints = [];
+  // Route grouped by continuous segment. A new inner list is pushed on each
+  // resume so the renderer can draw disconnected polylines across pause gaps
+  // instead of a straight line through whatever the user did while paused.
+  final List<List<MapPoint>> _segments = [];
 
   // Latest accepted raw position — exposed so the map can center on it
   // even before any route has accumulated.
@@ -71,7 +72,11 @@ class ActivityRecorder {
   bool get isTracking => _session != null;
   bool get isPaused => _session?.status == ActivityDatabase.statusPaused;
   String? get activityType => _session?.activityType;
-  List<MapPoint> get routePoints => List.unmodifiable(_routePoints);
+  /// Route grouped by continuous segment. Each inner list is a polyline
+  /// that should be drawn without connecting to neighbors — pause gaps
+  /// live in between.
+  List<List<MapPoint>> get routeSegments =>
+      List.unmodifiable(_segments.map(List.unmodifiable));
   MapPoint? get lastPosition => _lastPosition;
   double get liveDistanceKm => _liveDistanceKm;
 
@@ -111,7 +116,9 @@ class ActivityRecorder {
       startedAtMs: nowMs,
       status: ActivityDatabase.statusRecording,
     );
-    _routePoints.clear();
+    _segments
+      ..clear()
+      ..add(<MapPoint>[]);
     _lastPosition = null;
     _nextSeq = 0;
     _currentSegment = 0;
@@ -168,9 +175,10 @@ class ActivityRecorder {
       ActivityDatabase.statusRecording,
     );
 
-    // New segment → the next accepted point won't be connected to the
-    // pre-pause point in the rendered polyline.
+    // New segment → next accepted point starts a fresh polyline instead of
+    // connecting to the pre-pause point.
     _currentSegment++;
+    _segments.add(<MapPoint>[]);
     _filter?.beginWarmup();
 
     _startLocationStream();
@@ -233,7 +241,7 @@ class ActivityRecorder {
     }
     _session = null;
     _filter = null;
-    _routePoints.clear();
+    _segments.clear();
     _lastPosition = null;
     _liveDistanceKm = 0;
     _notify();
@@ -273,7 +281,8 @@ class ActivityRecorder {
 
     _liveDistanceKm += outcome.addedKm;
     _lastPosition = MapPoint(pos.latitude, pos.longitude);
-    _routePoints.add(_lastPosition!);
+    // Guaranteed non-empty: start() and resume() both push a fresh segment.
+    _segments.last.add(_lastPosition!);
 
     final sessionId = _session!.id;
     final seq = _nextSeq++;

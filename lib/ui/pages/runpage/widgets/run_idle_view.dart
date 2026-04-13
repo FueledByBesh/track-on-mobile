@@ -39,7 +39,7 @@ class RunIdleView extends StatelessWidget {
       children: [
         RunMapView(
           currentPosition: currentPosition,
-          routePoints: const [],
+          routeSegments: const [],
           isLoading: isLoading,
           error: error,
           onRetry: onRetry,

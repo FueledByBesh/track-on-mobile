@@ -87,9 +87,7 @@ class _RunPageState extends State<RunPage> {
 
   void _recenter() {
     final provider = context.read<ActivityProvider>();
-    final target = provider.lastPosition ??
-        (provider.routePoints.isNotEmpty ? provider.routePoints.last : null) ??
-        _initialPosition;
+    final target = provider.lastPosition ?? _initialPosition;
     if (target != null) {
       _mapController.recenterTo(target);
     }
@@ -107,21 +105,13 @@ class _RunPageState extends State<RunPage> {
     final activityProvider = context.watch<ActivityProvider>();
     final isTracking = activityProvider.isTracking;
 
-    final routePoints = activityProvider.routePoints;
-
-    MapPoint? currentPosition;
-    if (activityProvider.lastPosition != null) {
-      currentPosition = activityProvider.lastPosition;
-    } else if (routePoints.isNotEmpty) {
-      currentPosition = routePoints.last;
-    } else {
-      currentPosition = _initialPosition;
-    }
+    final routeSegments = activityProvider.routeSegments;
+    final currentPosition = activityProvider.lastPosition ?? _initialPosition;
 
     return isTracking
           ? RunRecordingView(
               currentPosition: currentPosition,
-              routePoints: routePoints,
+              routeSegments: routeSegments,
               mapController: _mapController,
               durationSeconds: activityProvider.liveDuration,
               distanceKm: activityProvider.liveDistance,

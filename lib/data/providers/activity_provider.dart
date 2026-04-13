@@ -24,7 +24,7 @@ class ActivityProvider extends ChangeNotifier {
   bool get isTracking => _recorder.isTracking;
   bool get isPaused => _recorder.isPaused;
   String? get activityType => _recorder.activityType;
-  List<MapPoint> get routePoints => _recorder.routePoints;
+  List<List<MapPoint>> get routeSegments => _recorder.routeSegments;
   MapPoint? get lastPosition => _recorder.lastPosition;
   double get liveDistance => _recorder.liveDistanceKm;
   int get liveDuration => _recorder.liveDurationSeconds;

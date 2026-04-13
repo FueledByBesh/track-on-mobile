@@ -28,9 +28,13 @@ class RunMapViewController {
 
 /// MapBox-backed map view. The public API uses MapPoint to stay
 /// implementation-agnostic. Conversion to MapBox types happens internally.
+///
+/// Routes are passed in as [routeSegments] — a list of continuous polylines.
+/// Each inner list is drawn as one polyline; pause gaps between segments
+/// are NOT connected, so the rendered track matches the distance math.
 class RunMapView extends StatefulWidget {
   final MapPoint? currentPosition;
-  final List<MapPoint> routePoints;
+  final List<List<MapPoint>> routeSegments;
   final bool isLoading;
   final String? error;
   final VoidCallback? onRetry;
@@ -52,7 +56,7 @@ class RunMapView extends StatefulWidget {
   const RunMapView({
     super.key,
     required this.currentPosition,
-    required this.routePoints,
+    required this.routeSegments,
     this.isLoading = false,
     this.error,
     this.onRetry,
@@ -67,7 +71,15 @@ class RunMapView extends StatefulWidget {
 class _RunMapViewState extends State<RunMapView> {
   MapboxMap? _mapboxMap;
   PolylineAnnotationManager? _polylineManager;
-  PolylineAnnotation? _currentPolyline;
+
+  /// One MapBox annotation per segment, parallel to widget.routeSegments.
+  /// Frozen segments (pre-pause) are never re-sent to the SDK; only the
+  /// currently-growing last segment gets in-place geometry updates.
+  final List<PolylineAnnotation> _segmentAnnotations = [];
+
+  /// Last-rendered length per segment. Skips the update call when a segment
+  /// hasn't grown since the previous frame.
+  final List<int> _renderedLengths = [];
 
   bool _styleReady = false;
   bool _autoFollowSuspended = false;
@@ -102,9 +114,11 @@ class _RunMapViewState extends State<RunMapView> {
       _moveCamera(widget.currentPosition!);
     }
 
-    // Route changed → redraw polyline
-    if (!_listEquals(widget.routePoints, oldWidget.routePoints)) {
-      _updatePolyline();
+    // Route changed → sync polylines. _syncPolylines is idempotent and
+    // skips segments whose length hasn't changed, so calling it on every
+    // rebuild is cheap.
+    if (!_segmentsEqual(widget.routeSegments, oldWidget.routeSegments)) {
+      _syncPolylines();
     }
   }
 
@@ -143,8 +157,8 @@ class _RunMapViewState extends State<RunMapView> {
 
     // Apply current state
     _applyCameraMode();
-    if (widget.routePoints.isNotEmpty) {
-      _updatePolyline();
+    if (widget.routeSegments.any((s) => s.length >= 2)) {
+      _syncPolylines();
     }
   }
 
@@ -209,34 +223,64 @@ class _RunMapViewState extends State<RunMapView> {
 
   // ============ POLYLINE ============
 
-  Future<void> _updatePolyline() async {
-    if (_polylineManager == null) return;
+  /// Reconcile the on-map polylines with widget.routeSegments. Per-segment
+  /// state is tracked in [_segmentAnnotations] and [_renderedLengths], so:
+  ///   - segments whose length hasn't changed since the last render are
+  ///     skipped (zero SDK calls)
+  ///   - a growing segment is updated in place (one update call, not
+  ///     delete+create)
+  ///   - new segments (after resume) get their own annotation
+  ///   - if the segment count shrinks — e.g. a new session started —
+  ///     stale annotations are deleted
+  Future<void> _syncPolylines() async {
+    final mgr = _polylineManager;
+    if (mgr == null) return;
+    final segments = widget.routeSegments;
 
-    if (_currentPolyline != null) {
-      await _polylineManager!.delete(_currentPolyline!);
-      _currentPolyline = null;
+    // 1. Drop trailing annotations we no longer need (new session, discard).
+    while (_segmentAnnotations.length > segments.length) {
+      final stale = _segmentAnnotations.removeLast();
+      _renderedLengths.removeLast();
+      await mgr.delete(stale);
     }
 
-    if (widget.routePoints.length < 2) return;
+    // 2. Update or create for each segment in order.
+    for (int i = 0; i < segments.length; i++) {
+      final seg = segments[i];
+      if (seg.length < 2) continue; // can't draw a line with one point
 
-    final coords =
-        widget.routePoints.map((p) => Position(p.lon, p.lat)).toList();
-
-    _currentPolyline = await _polylineManager!.create(
-      PolylineAnnotationOptions(
-        geometry: LineString(coordinates: coords),
-        lineColor: 0xFF6B5FFF,
-        lineWidth: 5.0,
-      ),
-    );
+      if (i < _segmentAnnotations.length) {
+        // Existing annotation — update only if it grew.
+        if (_renderedLengths[i] == seg.length) continue;
+        final coords = seg.map((p) => Position(p.lon, p.lat)).toList();
+        _segmentAnnotations[i].geometry = LineString(coordinates: coords);
+        await mgr.update(_segmentAnnotations[i]);
+        _renderedLengths[i] = seg.length;
+      } else {
+        // First time we're rendering this segment — create.
+        final coords = seg.map((p) => Position(p.lon, p.lat)).toList();
+        final ann = await mgr.create(
+          PolylineAnnotationOptions(
+            geometry: LineString(coordinates: coords),
+            lineColor: 0xFF6B5FFF,
+            lineWidth: 5.0,
+          ),
+        );
+        _segmentAnnotations.add(ann);
+        _renderedLengths.add(seg.length);
+      }
+    }
   }
 
   // ============ HELPERS ============
 
-  bool _listEquals(List<MapPoint> a, List<MapPoint> b) {
+  /// Fast "has anything changed?" check for segments. Compares lengths
+  /// only — individual point contents are append-only within a segment,
+  /// so length equality implies identity for our purposes.
+  bool _segmentsEqual(List<List<MapPoint>> a, List<List<MapPoint>> b) {
     if (a.length != b.length) return false;
     for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
+      if (a[i].length != b[i].length) return false;
     }
     return true;
   }
