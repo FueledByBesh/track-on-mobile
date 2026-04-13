@@ -75,8 +75,14 @@ class ActivityRecorder {
   /// Route grouped by continuous segment. Each inner list is a polyline
   /// that should be drawn without connecting to neighbors — pause gaps
   /// live in between.
+  ///
+  /// Note the explicit type parameters on both `unmodifiable` calls —
+  /// without them, Dart infers `List<dynamic>` through the tear-off and
+  /// the runtime cast to `List<List<MapPoint>>` throws on first read.
   List<List<MapPoint>> get routeSegments =>
-      List.unmodifiable(_segments.map(List.unmodifiable));
+      List<List<MapPoint>>.unmodifiable(
+        _segments.map((s) => List<MapPoint>.unmodifiable(s)),
+      );
   MapPoint? get lastPosition => _lastPosition;
   double get liveDistanceKm => _liveDistanceKm;
 
