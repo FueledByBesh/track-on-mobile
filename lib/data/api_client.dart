@@ -88,9 +88,23 @@ class ApiClient {
             opts.headers['Authorization'] = 'Bearer $token';
             final response = await _refreshDio.fetch(opts);
             return handler.resolve(response);
+          } on DioException catch (retryError) {
+            // The retry itself returned another 401 — the refresh token must
+            // have been bogus after all, even though tryRefresh() said it
+            // worked. Real auth failure: clear + logout.
+            if (retryError.response?.statusCode == 401) {
+              await clearTokens();
+              onAuthExpired?.call();
+              return handler.next(retryError);
+            }
+            // Any other status from the retry (400 validation, 500 backend
+            // bug, connection drop, etc.) is NOT an auth problem. Let it
+            // bubble up to the caller as a normal error — do not blow away
+            // the user's session for it.
+            return handler.next(retryError);
           } catch (_) {
-            await clearTokens();
-            onAuthExpired?.call();
+            // Non-Dio exception during the retry path (JSON parse, etc.).
+            // Also not an auth failure — just forward the original error.
             return handler.next(error);
           }
         },
