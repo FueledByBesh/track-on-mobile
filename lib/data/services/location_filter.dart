@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:geolocator/geolocator.dart';
+import 'logger_service.dart';
 
 /// Pure, stateful filter that decides whether a raw GPS fix should contribute
 /// to the recorded track. Stateful because several rules depend on the
@@ -53,11 +54,13 @@ class LocationFilter {
     final ageMs = DateTime.now().millisecondsSinceEpoch -
         p.timestamp.millisecondsSinceEpoch;
     if (ageMs > maxStalenessMs) {
+      Logger.d('FILTER', 'reject stale ageMs=$ageMs');
       return const FilterOutcome.rejected(FilterRejectReason.stale);
     }
 
     // Accuracy gate.
     if (p.accuracy > maxAccuracyMeters) {
+      Logger.d('FILTER', 'reject acc=${p.accuracy.toStringAsFixed(1)}m');
       return const FilterOutcome.rejected(FilterRejectReason.poorAccuracy);
     }
 
@@ -65,6 +68,7 @@ class LocationFilter {
     // _lastAccepted, so the first *counted* point is a real reading).
     if (_warmupRemaining > 0) {
       _warmupRemaining--;
+      Logger.d('FILTER', 'warmup skip (remaining=$_warmupRemaining)');
       return const FilterOutcome.warmup();
     }
 
@@ -79,6 +83,7 @@ class LocationFilter {
 
       // Jitter filter.
       if (distM < minDistanceMeters) {
+        Logger.d('FILTER', 'reject tooClose distM=${distM.toStringAsFixed(2)}m');
         return const FilterOutcome.rejected(FilterRejectReason.tooClose);
       }
 
@@ -88,16 +93,19 @@ class LocationFilter {
       if (dtMs > 0) {
         final impliedSpeed = distM / (dtMs / 1000.0);
         if (impliedSpeed > maxSpeedMetersPerSec) {
+          Logger.d('FILTER', 'reject speedSpike ${impliedSpeed.toStringAsFixed(1)}m/s');
           return const FilterOutcome.rejected(FilterRejectReason.speedSpike);
         }
       }
 
       _lastAccepted = p;
+      Logger.d('FILTER', 'accept distM=${distM.toStringAsFixed(2)}m');
       return FilterOutcome.accepted(distM / 1000.0);
     }
 
     // First post-warmup point. Seeds state, contributes zero distance.
     _lastAccepted = p;
+    Logger.d('FILTER', 'accept first (0 km seed)');
     return const FilterOutcome.accepted(0);
   }
 

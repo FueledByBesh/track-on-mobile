@@ -7,6 +7,7 @@ import 'package:trackon_mobile/data/providers/connectivity_provider.dart';
 import 'package:trackon_mobile/data/providers/steps_provider.dart';
 import 'package:trackon_mobile/data/models/workout.dart';
 import 'package:trackon_mobile/data/models/daily_steps.dart';
+import 'package:trackon_mobile/ui/pages/logs/logs_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/notifications_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/profile_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/settings_page.dart';
@@ -238,6 +239,18 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                   },
                   icon: const Icon(Icons.notifications_outlined),
                   color: Colors.grey.shade700,
+                ),
+                // Dev-only in-app logs — remove before release
+                IconButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LogsPage()),
+                    );
+                  },
+                  icon: const Icon(Icons.bug_report_outlined),
+                  color: Colors.grey.shade700,
+                  tooltip: 'Logs (dev)',
                 ),
                 IconButton(
                   onPressed: () {

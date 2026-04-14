@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
+import 'logger_service.dart';
 
 /// Abstraction over location providers.
 /// Current implementation: Geolocator (foreground only).
@@ -53,8 +54,20 @@ class GeolocatorLocationTracker implements LocationTracker {
           distanceFilter: distanceFilter.toInt(),
         ),
       ).listen(
-        (pos) => _controller?.add(pos),
-        onError: (e) => _controller?.addError(e),
+        (pos) {
+          final ageMs = DateTime.now().millisecondsSinceEpoch -
+              pos.timestamp.millisecondsSinceEpoch;
+          Logger.d(
+            'GPS',
+            'pos acc=${pos.accuracy.toStringAsFixed(1)}m '
+                'ts=${pos.timestamp.toIso8601String()} ageMs=$ageMs',
+          );
+          _controller?.add(pos);
+        },
+        onError: (e) {
+          Logger.w('GPS', 'stream error: $e');
+          _controller?.addError(e);
+        },
       );
     });
 

@@ -8,6 +8,7 @@ import '../models/activity.dart';
 import '../models/map_point.dart';
 import 'location_filter.dart';
 import 'location_tracker.dart';
+import 'logger_service.dart';
 
 /// Owns an in-progress activity. Local-first: every accepted GPS fix is
 /// persisted to SQLite before anything else. In-memory aggregates exist only
@@ -139,11 +140,13 @@ class ActivityRecorder {
     _startLocationStream();
     _startTickTimer();
     _notify();
+    Logger.i('REC', 'Activity started type=$activityType id=$id');
     return true;
   }
 
   Future<void> pause() async {
     if (_session == null || isPaused) return;
+    Logger.i('REC', 'Activity paused id=${_session!.id}');
 
     _currentPauseStartMs = DateTime.now().millisecondsSinceEpoch;
     _currentPauseRowId = await ActivityDatabase.openPause(
@@ -163,6 +166,7 @@ class ActivityRecorder {
 
   Future<void> resume() async {
     if (_session == null || !isPaused) return;
+    Logger.i('REC', 'Activity resumed id=${_session!.id}');
 
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     if (_currentPauseStartMs != null && _currentPauseRowId != null) {
@@ -229,6 +233,12 @@ class ActivityRecorder {
     await _stopLocationStream();
     _tickTimer?.cancel();
     _tickTimer = null;
+    Logger.i(
+      'REC',
+      'Activity stopped id=${result.localId} '
+          'distance=${result.distanceKm.toStringAsFixed(2)}km '
+          'duration=${result.durationSeconds}s',
+    );
     _session = null;
     _filter = null;
     _notify();
@@ -278,6 +288,7 @@ class ActivityRecorder {
   }
 
   Future<void> _onPosition(Position pos) async {
+    Logger.d('REC', '_onPosition session=${_session?.id} paused=$isPaused');
     if (_session == null || isPaused) return;
     final filter = _filter;
     if (filter == null) return;
@@ -293,18 +304,26 @@ class ActivityRecorder {
     final sessionId = _session!.id;
     final seq = _nextSeq++;
 
-    await ActivityDatabase.insertPoint(
-      sessionId: sessionId,
-      seq: seq,
-      timestamp: pos.timestamp.millisecondsSinceEpoch,
-      lat: pos.latitude,
-      lon: pos.longitude,
-      altitude: pos.altitude,
-      accuracy: pos.accuracy,
-      speed: pos.speed,
-      segmentIndex: _currentSegment,
+    try {
+      await ActivityDatabase.insertPoint(
+        sessionId: sessionId,
+        seq: seq,
+        timestamp: pos.timestamp.millisecondsSinceEpoch,
+        lat: pos.latitude,
+        lon: pos.longitude,
+        altitude: pos.altitude,
+        accuracy: pos.accuracy,
+        speed: pos.speed,
+        segmentIndex: _currentSegment,
+      );
+      await ActivityDatabase.updateSessionDistance(sessionId, _liveDistanceKm);
+    } catch (e, st) {
+      Logger.e('REC', 'DB insert failed', e, st);
+    }
+    Logger.d(
+      'REC',
+      'accepted segLen=${_segments.last.length} liveKm=${_liveDistanceKm.toStringAsFixed(4)}',
     );
-    await ActivityDatabase.updateSessionDistance(sessionId, _liveDistanceKm);
     _notify();
   }
 

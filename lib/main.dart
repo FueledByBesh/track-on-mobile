@@ -8,7 +8,9 @@ import 'data/providers/activity_provider.dart';
 import 'data/providers/activity_history_provider.dart';
 import 'data/providers/fitness_provider.dart';
 import 'data/providers/groups_provider.dart';
+import 'data/providers/logger_provider.dart';
 import 'data/providers/notification_provider.dart';
+import 'data/services/logger_service.dart';
 import 'data/services/step_service.dart';
 import 'data/services/step_sync_service.dart';
 import 'data/services/activity_service.dart';
@@ -29,6 +31,9 @@ Future<void> main() async {
 
   // Load environment variables from .env (git-ignored)
   await dotenv.load(fileName: '.env');
+
+  // Warm the in-app logger so the first real call doesn't race the DB open.
+  Logger.i('APP', 'App launched');
 
   // Initialize MapBox with the public access token
   final mapboxToken = dotenv.env['MAPBOX_PUBLIC_TOKEN'] ?? '';
@@ -98,6 +103,7 @@ Future<void> main() async {
           create: (_) =>
               NotificationProvider(NotificationApiService(apiClient)),
         ),
+        ChangeNotifierProvider(create: (_) => LoggerProvider()),
       ],
       child: const MyApp(),
     ),
