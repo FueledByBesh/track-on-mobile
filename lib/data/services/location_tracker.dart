@@ -40,12 +40,30 @@ class GeolocatorLocationTracker implements LocationTracker {
 
   @override
   Stream<Position> startTracking({double distanceFilter = 5}) {
-    stopTracking();
-    _controller = StreamController<Position>.broadcast();
+    // Detach any prior resources into locals BEFORE reassigning instance
+    // fields. If we let the old stopTracking work on `_subscription` /
+    // `_controller` directly, its awaits yield microtasks that resume
+    // *after* we've already stored the NEW controller — and the await-on-
+    // close ends up closing the controller we just created. Classic
+    // async self-interference bug.
+    final prevSub = _subscription;
+    final prevCtrl = _controller;
+    _subscription = null;
+    _controller = null;
+    if (prevSub != null || prevCtrl != null) {
+      // Fire-and-forget: cleans up old resources without touching fields.
+      _disposeOld(prevSub, prevCtrl);
+    }
+
+    // Regular (non-broadcast) controller — single subscriber (the
+    // ActivityRecorder), and buffering is desirable if the listener
+    // hasn't attached by the time the first position arrives.
+    final controller = StreamController<Position>();
+    _controller = controller;
 
     _ensurePermission().then((granted) {
       if (!granted) {
-        _controller?.addError('Location permission not granted');
+        controller.addError('Location permission not granted');
         return;
       }
       _subscription = Geolocator.getPositionStream(
@@ -62,24 +80,48 @@ class GeolocatorLocationTracker implements LocationTracker {
             'pos acc=${pos.accuracy.toStringAsFixed(1)}m '
                 'ts=${pos.timestamp.toIso8601String()} ageMs=$ageMs',
           );
-          _controller?.add(pos);
+          // Close over the LOCAL controller, not the field — even if
+          // _controller gets reassigned later, this callback still adds
+          // to the controller it was created for.
+          if (!controller.isClosed) {
+            controller.add(pos);
+          }
         },
         onError: (e) {
           Logger.w('GPS', 'stream error: $e');
-          _controller?.addError(e);
+          if (!controller.isClosed) {
+            controller.addError(e);
+          }
         },
       );
     });
 
-    return _controller!.stream;
+    return controller.stream;
   }
 
   @override
   Future<void> stopTracking() async {
-    await _subscription?.cancel();
+    // Same detach-then-cleanup pattern as startTracking: capture the
+    // current references into locals, clear the fields, then do the
+    // async cleanup on the locals so a concurrent startTracking can't
+    // see half-cleaned state.
+    final sub = _subscription;
+    final ctrl = _controller;
     _subscription = null;
-    await _controller?.close();
     _controller = null;
+    await _disposeOld(sub, ctrl);
+  }
+
+  Future<void> _disposeOld(
+    StreamSubscription<Position>? sub,
+    StreamController<Position>? ctrl,
+  ) async {
+    try {
+      await sub?.cancel();
+    } catch (_) {}
+    try {
+      await ctrl?.close();
+    } catch (_) {}
   }
 
   @override
