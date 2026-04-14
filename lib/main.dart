@@ -10,7 +10,9 @@ import 'data/providers/fitness_provider.dart';
 import 'data/providers/groups_provider.dart';
 import 'data/providers/logger_provider.dart';
 import 'data/providers/notification_provider.dart';
+import 'data/providers/permission_provider.dart';
 import 'data/services/logger_service.dart';
+import 'data/services/permission_service.dart';
 import 'data/services/step_service.dart';
 import 'data/services/step_sync_service.dart';
 import 'data/services/activity_service.dart';
@@ -104,6 +106,9 @@ Future<void> main() async {
               NotificationProvider(NotificationApiService(apiClient)),
         ),
         ChangeNotifierProvider(create: (_) => LoggerProvider()),
+        ChangeNotifierProvider(
+          create: (_) => PermissionProvider(PermissionService()),
+        ),
       ],
       child: const MyApp(),
     ),

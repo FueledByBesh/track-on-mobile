@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/providers/auth_provider.dart';
+import 'package:trackon_mobile/data/providers/permission_provider.dart';
+import 'package:trackon_mobile/data/services/permission_service.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -230,65 +232,186 @@ class _AppearanceTabState extends State<_AppearanceTab> {
   }
 }
 
-class _PermissionsTab extends StatefulWidget {
+class _PermissionsTab extends StatelessWidget {
   const _PermissionsTab();
 
   @override
-  State<_PermissionsTab> createState() => _PermissionsTabState();
-}
-
-class _PermissionsTabState extends State<_PermissionsTab> {
-  bool _locationAlways = false;
-  bool _locationWhileUsing = true;
-  bool _notifications = true;
-  bool _healthKit = false;
-  bool _camera = false;
-
-  @override
   Widget build(BuildContext context) {
+    final provider = context.watch<PermissionProvider>();
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         _SectionHeader(title: 'Location'),
-        _SettingsTileSwitch(
+        _PermissionTile(
           icon: Icons.location_on_outlined,
-          title: 'While Using App',
+          title: 'Location',
           subtitle: 'Required for run tracking',
-          value: _locationWhileUsing,
-          onChanged: (v) => setState(() => _locationWhileUsing = v),
-        ),
-        _SettingsTileSwitch(
-          icon: Icons.location_searching,
-          title: 'Always Allow',
-          subtitle: 'Background run tracking',
-          value: _locationAlways,
-          onChanged: (v) => setState(() => _locationAlways = v),
+          permission: AppPermission.location,
+          provider: provider,
         ),
         const SizedBox(height: 24),
-        _SectionHeader(title: 'Other Permissions'),
-        _SettingsTileSwitch(
-          icon: Icons.notifications_outlined,
-          title: 'Notifications',
-          subtitle: 'Push notifications',
-          value: _notifications,
-          onChanged: (v) => setState(() => _notifications = v),
-        ),
-        _SettingsTileSwitch(
+        _SectionHeader(title: 'Fitness Data'),
+        _PermissionTile(
           icon: Icons.favorite_outline,
-          title: 'Health Data',
-          subtitle: 'Access HealthKit / Google Fit',
-          value: _healthKit,
-          onChanged: (v) => setState(() => _healthKit = v),
-        ),
-        _SettingsTileSwitch(
-          icon: Icons.camera_alt_outlined,
-          title: 'Camera',
-          subtitle: 'For profile photo',
-          value: _camera,
-          onChanged: (v) => setState(() => _camera = v),
+          title: 'Fitness',
+          subtitle: 'Access step count from Health Connect',
+          permission: AppPermission.fitness,
+          provider: provider,
         ),
       ],
     );
+  }
+}
+
+/// Single permission row. Shows current status as a colored pill and
+/// an action button whose label depends on the status:
+///   - granted           → "Allowed" (no button, just the pill)
+///   - denied            → "Allow" (opens OS prompt via request())
+///   - permanentlyDenied → "Open Settings" (escalates to app settings)
+///   - unavailable       → "Not supported" (no button)
+///   - restricted        → "Restricted" (no button)
+///   - unknown           → "Check" (runs refresh())
+class _PermissionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final AppPermission permission;
+  final PermissionProvider provider;
+
+  const _PermissionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.permission,
+    required this.provider,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final status = provider.statusOf(permission);
+    final (statusLabel, statusColor) = _statusStyle(status);
+    final busy = provider.isBusy;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: const Color(0xFF6B5FFF)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: statusColor.withAlpha(30),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  statusLabel,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (_actionLabel(status) != null) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: busy ? null : () => _handleAction(context, status),
+                child: Text(_actionLabel(status)!),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleAction(
+    BuildContext context,
+    AppPermissionStatus status,
+  ) async {
+    switch (status) {
+      case AppPermissionStatus.denied:
+      case AppPermissionStatus.unknown:
+        await provider.request(permission);
+        break;
+      case AppPermissionStatus.permanentlyDenied:
+        await provider.openAppSettings();
+        break;
+      case AppPermissionStatus.granted:
+      case AppPermissionStatus.restricted:
+      case AppPermissionStatus.unavailable:
+        break;
+    }
+  }
+
+  String? _actionLabel(AppPermissionStatus status) {
+    switch (status) {
+      case AppPermissionStatus.denied:
+        return 'Allow';
+      case AppPermissionStatus.permanentlyDenied:
+        return 'Open Settings';
+      case AppPermissionStatus.unknown:
+        return 'Check';
+      case AppPermissionStatus.granted:
+      case AppPermissionStatus.restricted:
+      case AppPermissionStatus.unavailable:
+        return null;
+    }
+  }
+
+  (String, Color) _statusStyle(AppPermissionStatus status) {
+    switch (status) {
+      case AppPermissionStatus.granted:
+        return ('Allowed', Colors.green);
+      case AppPermissionStatus.denied:
+        return ('Denied', Colors.orange);
+      case AppPermissionStatus.permanentlyDenied:
+        return ('Blocked', Colors.red);
+      case AppPermissionStatus.restricted:
+        return ('Restricted', Colors.grey);
+      case AppPermissionStatus.unavailable:
+        return ('Not supported', Colors.grey);
+      case AppPermissionStatus.unknown:
+        return ('Unknown', Colors.grey);
+    }
   }
 }
 
