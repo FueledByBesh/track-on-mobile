@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+
 import '../models/workout.dart';
+import '../services/workout_library_service.dart';
 import '../services/workout_service.dart';
 
 class FitnessProvider extends ChangeNotifier {
-  final WorkoutApiService _workoutService;
+  final WorkoutLibraryService _libraryService;
   final ProgramApiService _programService;
   final PlannedWorkoutApiService _plannedService;
 
@@ -11,46 +13,119 @@ class FitnessProvider extends ChangeNotifier {
   List<WorkoutProgram> _programs = [];
   List<PlannedWorkout> _plannedWorkouts = [];
   DateTime _selectedDate = DateTime.now();
-  String? _selectedCategory;
+  WorkoutCategory? _selectedCategory;
+  Set<int> _selectedMuscleGroupIds = {};
   bool _isLoading = false;
+  bool _isLibraryRefreshing = false;
   bool _hasLoadedPlanned = false;
   bool _hasLoadedPrograms = false;
   bool _hasLoadedLibrary = false;
 
-  FitnessProvider(this._workoutService, this._programService, this._plannedService);
+  FitnessProvider(
+    this._libraryService,
+    this._programService,
+    this._plannedService,
+  );
 
-  List<Workout> get workoutLibrary => _selectedCategory != null
-      ? _workoutLibrary.where((w) => w.workoutType == _selectedCategory).toList()
-      : _workoutLibrary;
+  /// Filtered library view — category chip + optional muscle filter
+  /// chips intersect to produce the visible set.
+  List<Workout> get workoutLibrary {
+    Iterable<Workout> result = _workoutLibrary;
+    if (_selectedCategory != null) {
+      result =
+          result.where((w) => w.category.value == _selectedCategory!.value);
+    }
+    if (_selectedMuscleGroupIds.isNotEmpty) {
+      result = result.where(
+        (w) => w.muscles.any(
+          (m) => _selectedMuscleGroupIds.contains(m.muscleGroupId),
+        ),
+      );
+    }
+    return result.toList();
+  }
+
   List<Workout> get allWorkouts => _workoutLibrary;
+
+  /// Distinct muscles present across the loaded library, sorted by name.
+  /// Used for the muscle filter chip row.
+  List<WorkoutMuscle> get availableMuscleFilters {
+    final seen = <int, WorkoutMuscle>{};
+    for (final w in _workoutLibrary) {
+      for (final m in w.muscles) {
+        seen.putIfAbsent(m.muscleGroupId, () => m);
+      }
+    }
+    final list = seen.values.toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    return list;
+  }
+
   List<WorkoutProgram> get programs => _programs;
   List<PlannedWorkout> get plannedWorkouts => _plannedWorkouts;
   DateTime get selectedDate => _selectedDate;
-  String? get selectedCategory => _selectedCategory;
+  WorkoutCategory? get selectedCategory => _selectedCategory;
+  Set<int> get selectedMuscleGroupIds => _selectedMuscleGroupIds;
   bool get isLoading => _isLoading;
+  bool get isLibraryRefreshing => _isLibraryRefreshing;
 
   void setSelectedDate(DateTime date) {
     _selectedDate = date;
     loadPlannedWorkouts();
   }
 
-  void setCategory(String? category) {
+  void setCategory(WorkoutCategory? category) {
     _selectedCategory = category;
     notifyListeners();
   }
 
+  void toggleMuscleFilter(int muscleGroupId) {
+    if (_selectedMuscleGroupIds.contains(muscleGroupId)) {
+      _selectedMuscleGroupIds.remove(muscleGroupId);
+    } else {
+      _selectedMuscleGroupIds.add(muscleGroupId);
+    }
+    notifyListeners();
+  }
+
+  void clearMuscleFilters() {
+    if (_selectedMuscleGroupIds.isEmpty) return;
+    _selectedMuscleGroupIds = {};
+    notifyListeners();
+  }
+
+  /// First-pass load: shows spinner only if we have no cached data yet.
+  /// Subsequent calls do a cheap status probe; the UI isn't blocked.
   Future<void> loadWorkoutLibrary() async {
     if (!_hasLoadedLibrary) {
       _isLoading = true;
       notifyListeners();
+    } else {
+      _isLibraryRefreshing = true;
+      notifyListeners();
     }
     try {
-      _workoutLibrary = await _workoutService.getAll();
+      _workoutLibrary = await _libraryService.ensureFresh();
       _hasLoadedLibrary = true;
     } catch (e) {
       debugPrint('Error loading workout library: $e');
     }
     _isLoading = false;
+    _isLibraryRefreshing = false;
+    notifyListeners();
+  }
+
+  /// Explicit force refresh — triggered by pull-to-refresh. Always hits
+  /// the network and replaces the cache.
+  Future<void> forceRefreshLibrary() async {
+    _isLibraryRefreshing = true;
+    notifyListeners();
+    try {
+      _workoutLibrary = await _libraryService.forceRefresh();
+    } catch (e) {
+      debugPrint('Force refresh failed: $e');
+    }
+    _isLibraryRefreshing = false;
     notifyListeners();
   }
 

@@ -290,15 +290,12 @@ class _WorkoutCard extends StatelessWidget {
   const _WorkoutCard({required this.plannedWorkout});
 
   Color get _typeColor {
-    switch (plannedWorkout.workoutType) {
-      case 'CHEST': return Colors.blue;
-      case 'LEGS': return Colors.orange;
-      case 'BACK': return Colors.purple;
-      case 'SHOULDERS': return Colors.teal;
-      case 'ARMS': return Colors.red;
-      case 'CORE': return Colors.green;
-      case 'CARDIO': return Colors.deepOrange;
-      case 'FULL_BODY': return const Color(0xFF6B5FFF);
+    switch (plannedWorkout.category.value) {
+      case 'STRENGTH': return const Color(0xFF6B5FFF);
+      case 'CROSSFIT': return Colors.deepOrange;
+      case 'CARDIO': return Colors.red;
+      case 'YOGA': return Colors.green;
+      case 'MOBILITY': return Colors.teal;
       default: return const Color(0xFF6B5FFF);
     }
   }
@@ -353,7 +350,7 @@ class _WorkoutCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        plannedWorkout.workoutType,
+                        plannedWorkout.category.label,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: _typeColor,
                               fontWeight: FontWeight.w500,

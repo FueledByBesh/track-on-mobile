@@ -6,15 +6,24 @@ class WorkoutApiService {
 
   WorkoutApiService(this._api);
 
-  Future<List<Workout>> getAll({String? type}) async {
-    final response = await _api.dio.get('/api/workouts',
-        queryParameters: type != null ? {'type': type} : null);
+  Future<List<Workout>> getAll({String? category}) async {
+    final response = await _api.dio.get(
+      '/api/workouts',
+      queryParameters: category != null ? {'category': category} : null,
+    );
     return (response.data as List).map((e) => Workout.fromJson(e)).toList();
   }
 
   Future<Workout> getById(String id) async {
     final response = await _api.dio.get('/api/workouts/$id');
     return Workout.fromJson(response.data);
+  }
+
+  /// Cheap probe — used by the library cache to decide if a refetch
+  /// is needed. Returns count + last edit timestamp.
+  Future<WorkoutLibraryStatus> getStatus() async {
+    final response = await _api.dio.get('/api/workouts/status');
+    return WorkoutLibraryStatus.fromJson(response.data as Map<String, dynamic>);
   }
 }
 

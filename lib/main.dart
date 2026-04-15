@@ -19,6 +19,7 @@ import 'data/services/activity_service.dart';
 import 'data/services/activity_recorder.dart';
 import 'data/services/activity_sync_service.dart';
 import 'data/services/location_tracker.dart';
+import 'data/services/workout_library_service.dart';
 import 'data/services/workout_service.dart';
 import 'data/services/friendship_service.dart';
 import 'data/services/club_service.dart';
@@ -89,7 +90,7 @@ Future<void> main() async {
         ),
         ChangeNotifierProvider(
           create: (_) => FitnessProvider(
-            WorkoutApiService(apiClient),
+            WorkoutLibraryService(WorkoutApiService(apiClient)),
             ProgramApiService(apiClient),
             PlannedWorkoutApiService(apiClient),
           ),
