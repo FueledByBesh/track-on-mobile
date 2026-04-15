@@ -4,7 +4,9 @@ import 'statistics.dart';
 import 'dart:ui';
 import 'package:trackon_mobile/data/providers/fitness_provider.dart';
 import 'package:trackon_mobile/data/providers/connectivity_provider.dart';
+import 'package:trackon_mobile/data/providers/permission_provider.dart';
 import 'package:trackon_mobile/data/providers/steps_provider.dart';
+import 'package:trackon_mobile/data/services/permission_service.dart';
 import 'package:trackon_mobile/data/models/workout.dart';
 import 'package:trackon_mobile/data/models/daily_steps.dart';
 import 'package:trackon_mobile/ui/pages/logs/logs_page.dart';
@@ -80,6 +82,11 @@ class HomePageBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final stepsProvider = context.watch<StepsProvider>();
     final fitnessProvider = context.watch<FitnessProvider>();
+    final permissions = context.watch<PermissionProvider>();
+    final fitnessStatus = permissions.statusOf(AppPermission.fitness);
+    final showFitnessBanner =
+        fitnessStatus != AppPermissionStatus.granted &&
+        fitnessStatus != AppPermissionStatus.unknown;
     final plannedWorkouts = fitnessProvider.plannedWorkouts;
 
     final todaySteps = stepsProvider.today;
@@ -119,6 +126,12 @@ class HomePageBody extends StatelessWidget {
       child: Column(
         spacing: 20,
         children: [
+          if (showFitnessBanner)
+            _FitnessPermissionBanner(
+              status: fitnessStatus,
+              onAllow: () => permissions.request(AppPermission.fitness),
+              onOpenSettings: () => permissions.openAppSettings(),
+            ),
           stepsProvider.isLoading
               ? const SizedBox(
                   height: 400,
@@ -374,6 +387,89 @@ class _WorkoutCard extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Inline banner shown when the user hasn't granted Health Connect /
+/// HealthKit access. Non-blocking — it sits above the step stats but
+/// doesn't hide them. Button label and action depend on the current
+/// permission state.
+class _FitnessPermissionBanner extends StatelessWidget {
+  final AppPermissionStatus status;
+  final VoidCallback onAllow;
+  final VoidCallback onOpenSettings;
+
+  const _FitnessPermissionBanner({
+    required this.status,
+    required this.onAllow,
+    required this.onOpenSettings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isPermanent = status == AppPermissionStatus.permanentlyDenied;
+    final isUnavailable = status == AppPermissionStatus.unavailable;
+
+    final String title;
+    final String subtitle;
+    if (isUnavailable) {
+      title = 'Step tracking unavailable';
+      subtitle = 'Health Connect is not installed on this device.';
+    } else if (isPermanent) {
+      title = 'Step access is blocked';
+      subtitle = 'Enable Health Connect access in system settings.';
+    } else {
+      title = 'Step tracking is off';
+      subtitle = 'Allow Health Connect access to see your step count.';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.favorite_outline, color: Colors.orange.shade700, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: Colors.orange.shade900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.orange.shade800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (!isUnavailable)
+            TextButton(
+              onPressed: isPermanent ? onOpenSettings : onAllow,
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.orange.shade900,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                visualDensity: VisualDensity.compact,
+              ),
+              child: Text(isPermanent ? 'Settings' : 'Allow'),
+            ),
+        ],
       ),
     );
   }

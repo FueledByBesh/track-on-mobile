@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/models/map_point.dart';
 import 'package:trackon_mobile/data/providers/activity_history_provider.dart';
 import 'package:trackon_mobile/data/providers/activity_provider.dart';
+import 'package:trackon_mobile/data/providers/permission_provider.dart';
 import 'package:trackon_mobile/data/services/location_tracker.dart';
+import 'package:trackon_mobile/data/services/permission_service.dart';
 import 'widgets/activity_type_selector.dart';
 import 'widgets/run_idle_view.dart';
 import 'widgets/run_map_view.dart';
@@ -53,8 +55,46 @@ class _RunPageState extends State<RunPage> {
   }
 
   Future<void> _start() async {
+    // Gate the start on actually having location permission. Previously,
+    // tapping Start with denied permission silently failed inside the
+    // recorder — now we surface the issue with a prompt or a settings
+    // escalation so the user can fix it in one tap.
+    final permissions = context.read<PermissionProvider>();
+    var status = permissions.statusOf(AppPermission.location);
+
+    if (status != AppPermissionStatus.granted) {
+      status = await permissions.request(AppPermission.location);
+    }
+    if (!mounted) return;
+
+    if (status != AppPermissionStatus.granted) {
+      _showLocationDeniedSnackBar(status);
+      return;
+    }
+
     final provider = context.read<ActivityProvider>();
     await provider.start(_selectedType.value);
+  }
+
+  void _showLocationDeniedSnackBar(AppPermissionStatus status) {
+    final permissions = context.read<PermissionProvider>();
+    final isPermanent = status == AppPermissionStatus.permanentlyDenied;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          isPermanent
+              ? 'Location is blocked. Enable it in Settings to start tracking.'
+              : 'Location permission is required to start an activity.',
+        ),
+        action: isPermanent
+            ? SnackBarAction(
+                label: 'Open Settings',
+                onPressed: () => permissions.openAppSettings(),
+              )
+            : null,
+        duration: const Duration(seconds: 5),
+      ),
+    );
   }
 
   Future<void> _stop() async {
@@ -125,7 +165,14 @@ class _RunPageState extends State<RunPage> {
               currentPosition: currentPosition,
               isLoading: _loadingInitial,
               error: _locationError,
-              onRetry: () {
+              onRetry: () async {
+                // Retry failures are usually permission-denied — nudge the
+                // user through the OS prompt before re-trying the fetch.
+                final permissions = context.read<PermissionProvider>();
+                if (!permissions.isGranted(AppPermission.location)) {
+                  await permissions.request(AppPermission.location);
+                }
+                if (!mounted) return;
                 setState(() {
                   _loadingInitial = true;
                   _locationError = null;
