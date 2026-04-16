@@ -149,6 +149,37 @@ class PlannedWorkoutApiService {
     return (response.data as List).map((e) => PlannedWorkout.fromJson(e)).toList();
   }
 
+  /// Merged My Day timeline: workouts + programs sorted by sort_order.
+  Future<List<DayItem>> getDayItems(String date) async {
+    final response = await _api.dio.get(
+      '/api/planned-workouts/day-items',
+      queryParameters: {'date': date},
+    );
+    return (response.data as List)
+        .map((e) => dayItemFromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Add a program as one card to a day.
+  Future<void> addProgramToDaySingle(String programId, String date) async {
+    await _api.dio.post('/api/planned-programs', data: {
+      'program_id': programId,
+      'planned_date': date,
+    });
+  }
+
+  /// Mark a planned program completed / uncompleted.
+  Future<void> markProgramCompleted(String id, bool completed) async {
+    await _api.dio.put('/api/planned-programs/$id', data: {
+      'completed': completed,
+    });
+  }
+
+  /// Remove a planned program from a day.
+  Future<void> removePlannedProgram(String id) async {
+    await _api.dio.delete('/api/planned-programs/$id');
+  }
+
   /// Batch-add one workout to many days in a single transaction.
   /// Used by the "Add to day" calendar sheet.
   Future<List<PlannedWorkout>> batchAddWorkout({

@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/providers/fitness_provider.dart';
 import 'package:trackon_mobile/data/models/workout.dart';
+import 'package:trackon_mobile/ui/pages/program/program_detail_page.dart';
 import 'package:trackon_mobile/ui/pages/workout/about_workout_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/workout_thumbnail.dart';
 
@@ -23,7 +24,7 @@ class _FitnessPageState extends State<FitnessPage>
     _tabController = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<FitnessProvider>();
-      provider.loadPlannedWorkouts();
+      provider.loadDayItems();
       provider.loadPrograms();
       provider.loadWorkoutLibrary();
     });
@@ -82,7 +83,7 @@ class MyDayTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = context.watch<FitnessProvider>();
     final selectedDate = provider.selectedDate;
-    final plannedWorkouts = provider.plannedWorkouts;
+    final items = provider.dayItems;
     final isToday = DateUtils.isSameDay(selectedDate, DateTime.now());
 
     return Column(
@@ -95,7 +96,7 @@ class MyDayTab extends StatelessWidget {
         Expanded(
           child: provider.isLoading
               ? const Center(child: CircularProgressIndicator())
-              : plannedWorkouts.isEmpty
+              : items.isEmpty
                   ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -108,22 +109,42 @@ class MyDayTab extends StatelessWidget {
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.all(16),
-                      itemCount: plannedWorkouts.length + (isToday ? 1 : 0),
+                      itemCount: items.length + (isToday ? 1 : 0),
                       itemBuilder: (context, index) {
-                        if (isToday && index == plannedWorkouts.length) {
+                        if (isToday && index == items.length) {
                           return Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: SizedBox(
                               width: double.infinity,
                               height: 50,
                               child: ElevatedButton.icon(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => TrainingSessionPage(workouts: plannedWorkouts),
-                                    ),
-                                  );
+                                onPressed: items.isEmpty ? null : () {
+                                  // Build PlannedWorkout list from DayWorkout items
+                                  // for the existing TrainingSessionPage. Programs are
+                                  // handled separately (tap the program card to start).
+                                  final workoutItems = items
+                                      .whereType<DayWorkout>()
+                                      .map((dw) => PlannedWorkout(
+                                            id: dw.id,
+                                            workoutId: dw.workoutId,
+                                            workoutName: dw.workoutName,
+                                            category: dw.category,
+                                            tutorialVideoUrl: dw.tutorialVideoUrl,
+                                            plannedDate: selectedDate.toIso8601String().split('T')[0],
+                                            sets: dw.sets,
+                                            reps: dw.reps,
+                                            completed: dw.completed,
+                                            sortOrder: dw.sortOrder,
+                                          ))
+                                      .toList();
+                                  if (workoutItems.isNotEmpty) {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => TrainingSessionPage(workouts: workoutItems),
+                                      ),
+                                    );
+                                  }
                                 },
                                 icon: const Icon(Icons.play_arrow, color: Colors.white),
                                 label: const Text('Start Training', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
@@ -135,8 +156,11 @@ class MyDayTab extends StatelessWidget {
                             ),
                           );
                         }
-                        final pw = plannedWorkouts[index];
-                        return _PlannedWorkoutCard(plannedWorkout: pw);
+                        final item = items[index];
+                        return switch (item) {
+                          DayWorkout dw => _PlannedWorkoutCard(dayWorkout: dw),
+                          DayProgram dp => _PlannedProgramCard(dayProgram: dp),
+                        };
                       },
                     ),
         ),
@@ -202,25 +226,43 @@ class _WeekCalendar extends StatelessWidget {
 }
 
 class _PlannedWorkoutCard extends StatelessWidget {
-  final PlannedWorkout plannedWorkout;
+  final DayWorkout dayWorkout;
 
-  const _PlannedWorkoutCard({required this.plannedWorkout});
+  const _PlannedWorkoutCard({required this.dayWorkout});
 
   @override
   Widget build(BuildContext context) {
+    final dw = dayWorkout;
     return Dismissible(
-      key: Key(plannedWorkout.id),
+      key: Key(dw.id),
       direction: DismissDirection.endToStart,
-      onDismissed: (_) => context.read<FitnessProvider>().deletePlannedWorkout(plannedWorkout.id),
+      onDismissed: (_) =>
+          context.read<FitnessProvider>().deletePlannedWorkout(dw.id),
       background: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         margin: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(
+            color: Colors.red, borderRadius: BorderRadius.circular(12)),
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       child: GestureDetector(
-        onTap: () => openAboutWorkoutFromPlanned(context, plannedWorkout),
+        onTap: () {
+          // Build a PlannedWorkout from DayWorkout for the about page helper.
+          final pw = PlannedWorkout(
+            id: dw.id,
+            workoutId: dw.workoutId,
+            workoutName: dw.workoutName,
+            category: dw.category,
+            tutorialVideoUrl: dw.tutorialVideoUrl,
+            plannedDate: '',
+            sets: dw.sets,
+            reps: dw.reps,
+            completed: dw.completed,
+            sortOrder: dw.sortOrder,
+          );
+          openAboutWorkoutFromPlanned(context, pw);
+        },
         child: Container(
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.all(12),
@@ -231,16 +273,11 @@ class _PlannedWorkoutCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Tapping only the check icon toggles completion — avoids
-              // navigating when the user just wants to mark it done.
               GestureDetector(
                 onTap: () => context
                     .read<FitnessProvider>()
-                    .toggleWorkoutCompleted(
-                      plannedWorkout.id,
-                      !plannedWorkout.completed,
-                    ),
-                child: plannedWorkout.completed
+                    .toggleWorkoutCompleted(dw.id, !dw.completed),
+                child: dw.completed
                     ? Container(
                         width: 50,
                         height: 50,
@@ -249,11 +286,12 @@ class _PlannedWorkoutCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: const Center(
-                          child: Icon(Icons.check_circle, color: Colors.green),
+                          child:
+                              Icon(Icons.check_circle, color: Colors.green),
                         ),
                       )
                     : WorkoutThumbnail(
-                        videoUrl: plannedWorkout.tutorialVideoUrl,
+                        videoUrl: dw.tutorialVideoUrl,
                         size: WorkoutThumbnailSize.small,
                       ),
               ),
@@ -262,14 +300,142 @@ class _PlannedWorkoutCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(plannedWorkout.workoutName, style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600, decoration: plannedWorkout.completed ? TextDecoration.lineThrough : null)),
+                    Text(
+                      dw.workoutName,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            decoration: dw.completed
+                                ? TextDecoration.lineThrough
+                                : null,
+                          ),
+                    ),
                     const SizedBox(height: 4),
-                    Text('${plannedWorkout.sets} sets x ${plannedWorkout.reps} reps', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey)),
+                    Text(
+                      '${dw.sets} sets x ${dw.reps} reps',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Colors.grey),
+                    ),
                   ],
                 ),
               ),
               const Icon(Icons.chevron_right, color: Colors.grey),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Program card on the My Day timeline. Shows the program name, workout
+/// count, and a completion toggle. Tap navigates to ProgramDetailPage
+/// (when we build it — for now just toggles complete).
+class _PlannedProgramCard extends StatelessWidget {
+  final DayProgram dayProgram;
+
+  const _PlannedProgramCard({required this.dayProgram});
+
+  @override
+  Widget build(BuildContext context) {
+    final dp = dayProgram;
+    return Dismissible(
+      key: Key(dp.id),
+      direction: DismissDirection.endToStart,
+      onDismissed: (_) =>
+          context.read<FitnessProvider>().deletePlannedProgram(dp.id),
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+            color: Colors.red, borderRadius: BorderRadius.circular(12)),
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      child: GestureDetector(
+        onTap: () {
+          // TODO: navigate to ProgramDetailPage when it's built.
+          // For now, toggle completed.
+          context
+              .read<FitnessProvider>()
+              .toggleProgramCompleted(dp.id, !dp.completed);
+        },
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: dp.completed ? Colors.grey.shade50 : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: dp.completed
+                  ? Colors.green.shade200
+                  : const Color(0xFF6B5FFF).withAlpha(60),
+              width: 1.5,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: dp.completed
+                      ? Colors.green.withAlpha(40)
+                      : const Color(0xFF6B5FFF).withAlpha(30),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(
+                  child: Icon(
+                    dp.completed ? Icons.check_circle : Icons.list_alt,
+                    color: dp.completed
+                        ? Colors.green
+                        : const Color(0xFF6B5FFF),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      dp.programName,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            decoration: dp.completed
+                                ? TextDecoration.lineThrough
+                                : null,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${dp.workoutCount} exercises',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6B5FFF).withAlpha(20),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'PROGRAM',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF6B5FFF),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -288,101 +454,156 @@ class MyProgramsTab extends StatelessWidget {
     final provider = context.watch<FitnessProvider>();
     final programs = provider.programs;
 
-    return provider.isLoading
-        ? const Center(child: CircularProgressIndicator())
-        : programs.isEmpty
-            ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.folder_open, size: 48, color: Colors.grey.shade300),
-                    const SizedBox(height: 12),
-                    Text('No programs yet', style: TextStyle(color: Colors.grey.shade500)),
-                  ],
-                ),
-              )
-            : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: programs.length,
-                itemBuilder: (context, index) {
-                  final program = programs[index];
-                  return GestureDetector(
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ProgramDetailPage(program: program))),
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 60, height: 60,
-                            decoration: BoxDecoration(color: const Color(0xFF6B5FFF).withAlpha(30), borderRadius: BorderRadius.circular(8)),
-                            child: const Center(child: Icon(Icons.folder_outlined, color: Color(0xFF6B5FFF), size: 30)),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(program.name, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-                                const SizedBox(height: 4),
-                                Text('${program.items.length} exercises', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey)),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () {
-                              provider.addProgramToDay(program.id);
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${program.name} added to today')));
-                            },
-                            icon: const Icon(Icons.add_circle_outline, color: Color(0xFF6B5FFF)),
-                          ),
-                          const Icon(Icons.chevron_right, color: Colors.grey),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-  }
-}
-
-class ProgramDetailPage extends StatelessWidget {
-  final WorkoutProgram program;
-  const ProgramDetailPage({super.key, required this.program});
-
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(program.name)),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: program.items.length,
-        itemBuilder: (context, index) {
-          final item = program.items[index];
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
-            child: Row(
-              children: [
-                CircleAvatar(backgroundColor: const Color(0xFF6B5FFF).withAlpha(30), child: Text('${index + 1}', style: const TextStyle(color: Color(0xFF6B5FFF)))),
-                const SizedBox(width: 12),
-                Expanded(
+      backgroundColor: Colors.transparent,
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: const Color(0xFF6B5FFF),
+        onPressed: () => _showCreateDialog(context),
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
+      body: provider.isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : programs.isEmpty
+              ? Center(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(item.workoutName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                      Text('${item.sets} sets x ${item.reps} reps', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                      Icon(Icons.folder_open, size: 48, color: Colors.grey.shade300),
+                      const SizedBox(height: 12),
+                      Text('No programs yet', style: TextStyle(color: Colors.grey.shade500)),
+                      const SizedBox(height: 4),
+                      Text('Tap + to create one', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
                     ],
                   ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: programs.length,
+                  itemBuilder: (context, index) {
+                    final program = programs[index];
+                    return GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => ProgramDetailPage(program: program)),
+                      ),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: program.active
+                                    ? const Color(0xFF6B5FFF).withAlpha(30)
+                                    : Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Center(
+                                child: Icon(
+                                  Icons.list_alt,
+                                  color: program.active
+                                      ? const Color(0xFF6B5FFF)
+                                      : Colors.grey,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    program.name,
+                                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        '${program.items.length} exercises',
+                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
+                                      ),
+                                      if (program.schedule.isNotEmpty) ...[
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          _scheduleLabel(program.schedule),
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                color: const Color(0xFF6B5FFF),
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                        ),
+                                      ],
+                                      if (!program.active) ...[
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Inactive',
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                color: Colors.orange,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right, color: Colors.grey),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              ],
-            ),
-          );
-        },
+    );
+  }
+
+  static String _scheduleLabel(List<int> weekdays) {
+    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return weekdays
+        .where((d) => d >= 1 && d <= 7)
+        .map((d) => names[d - 1])
+        .join(' · ');
+  }
+
+  static Future<void> _showCreateDialog(BuildContext context) async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New Program'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'Program name',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Create'),
+          ),
+        ],
       ),
     );
+    if (name != null && name.isNotEmpty) {
+      await context.read<FitnessProvider>().createProgram(name, []);
+    }
   }
 }
 

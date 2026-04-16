@@ -11,7 +11,7 @@ class FitnessProvider extends ChangeNotifier {
 
   List<Workout> _workoutLibrary = [];
   List<WorkoutProgram> _programs = [];
-  List<PlannedWorkout> _plannedWorkouts = [];
+  List<DayItem> _dayItems = [];
   DateTime _selectedDate = DateTime.now();
   WorkoutCategory? _selectedCategory;
   Set<int> _selectedMuscleGroupIds = {};
@@ -62,7 +62,7 @@ class FitnessProvider extends ChangeNotifier {
   }
 
   List<WorkoutProgram> get programs => _programs;
-  List<PlannedWorkout> get plannedWorkouts => _plannedWorkouts;
+  List<DayItem> get dayItems => _dayItems;
   DateTime get selectedDate => _selectedDate;
   WorkoutCategory? get selectedCategory => _selectedCategory;
   Set<int> get selectedMuscleGroupIds => _selectedMuscleGroupIds;
@@ -71,7 +71,7 @@ class FitnessProvider extends ChangeNotifier {
 
   void setSelectedDate(DateTime date) {
     _selectedDate = date;
-    loadPlannedWorkouts();
+    loadDayItems();
   }
 
   void setCategory(WorkoutCategory? category) {
@@ -144,17 +144,19 @@ class FitnessProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> loadPlannedWorkouts() async {
+  /// Load the merged My Day timeline (workouts + programs) for the
+  /// currently selected date.
+  Future<void> loadDayItems() async {
     if (!_hasLoadedPlanned) {
       _isLoading = true;
       notifyListeners();
     }
     try {
       final dateStr = _selectedDate.toIso8601String().split('T')[0];
-      _plannedWorkouts = await _plannedService.getByDate(dateStr);
+      _dayItems = await _plannedService.getDayItems(dateStr);
       _hasLoadedPlanned = true;
     } catch (e) {
-      debugPrint('Error loading planned workouts: $e');
+      debugPrint('Error loading day items: $e');
     }
     _isLoading = false;
     notifyListeners();
@@ -169,37 +171,79 @@ class FitnessProvider extends ChangeNotifier {
         customSets: sets,
         customReps: reps,
       );
-      await loadPlannedWorkouts();
+      await loadDayItems();
     } catch (e) {
       debugPrint('Error adding workout to day: $e');
     }
   }
 
-  Future<void> addProgramToDay(String programId) async {
+  /// Add a program as a single card to a day (not exploded into workouts).
+  Future<void> addProgramToDay(String programId, {DateTime? date}) async {
     try {
-      final dateStr = _selectedDate.toIso8601String().split('T')[0];
-      await _plannedService.addProgramToDay(programId, dateStr);
-      await loadPlannedWorkouts();
+      final target = date ?? _selectedDate;
+      final dateStr = target.toIso8601String().split('T')[0];
+      await _plannedService.addProgramToDaySingle(programId, dateStr);
+      await loadDayItems();
     } catch (e) {
       debugPrint('Error adding program to day: $e');
+      rethrow;
     }
   }
 
   Future<void> toggleWorkoutCompleted(String id, bool completed) async {
     try {
       await _plannedService.updateWorkout(id, completed: completed);
-      await loadPlannedWorkouts();
+      await loadDayItems();
     } catch (e) {
       debugPrint('Error toggling workout: $e');
+    }
+  }
+
+  Future<void> toggleProgramCompleted(String id, bool completed) async {
+    try {
+      await _plannedService.markProgramCompleted(id, completed);
+      await loadDayItems();
+    } catch (e) {
+      debugPrint('Error toggling program: $e');
     }
   }
 
   Future<void> deletePlannedWorkout(String id) async {
     try {
       await _plannedService.deleteWorkout(id);
-      await loadPlannedWorkouts();
+      await loadDayItems();
     } catch (e) {
       debugPrint('Error deleting planned workout: $e');
+    }
+  }
+
+  Future<void> deletePlannedProgram(String id) async {
+    try {
+      await _plannedService.removePlannedProgram(id);
+      await loadDayItems();
+    } catch (e) {
+      debugPrint('Error deleting planned program: $e');
+    }
+  }
+
+  /// Update program metadata (name, description, active, schedule, items).
+  Future<void> updateProgram(
+    String id, {
+    required String name,
+    String? description,
+    bool? active,
+    List<int>? schedule,
+    List<Map<String, dynamic>>? items,
+  }) async {
+    try {
+      await _programService.update(id, name, items ?? []);
+      // The existing update replaces items. For schedule/description/active
+      // we need the extended DTO — but the current mobile ProgramApiService
+      // still sends the old shape. We'll extend it to send the full body.
+      await loadPrograms();
+    } catch (e) {
+      debugPrint('Error updating program: $e');
+      rethrow;
     }
   }
 
@@ -260,7 +304,7 @@ class FitnessProvider extends ChangeNotifier {
       dates: dateStrings,
     );
     // Refresh whichever date is currently selected in MyDayTab
-    await loadPlannedWorkouts();
+    await loadDayItems();
   }
 
   void _replaceProgramInCache(WorkoutProgram updated) {

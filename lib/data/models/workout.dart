@@ -115,11 +115,17 @@ class WorkoutLibraryStatus {
 class WorkoutProgram {
   final String id;
   final String name;
+  final String? description;
+  final bool active;
+  final List<int> schedule; // 1=Mon..7=Sun
   final List<ProgramWorkoutItem> items;
 
   WorkoutProgram({
     required this.id,
     required this.name,
+    this.description,
+    this.active = true,
+    this.schedule = const [],
     required this.items,
   });
 
@@ -127,12 +133,102 @@ class WorkoutProgram {
     return WorkoutProgram(
       id: json['id'],
       name: json['name'] ?? '',
+      description: json['description'] as String?,
+      active: json['active'] as bool? ?? true,
+      schedule: (json['schedule'] as List<dynamic>?)
+              ?.map((e) => (e as num).toInt())
+              .toList() ??
+          const [],
       items: (json['items'] as List<dynamic>?)
               ?.map((e) => ProgramWorkoutItem.fromJson(e))
               .toList() ??
           [],
     );
   }
+}
+
+/// Discriminated union for the My Day timeline. Each item is either
+/// a standalone workout or a program card.
+sealed class DayItem {
+  int get sortOrder;
+  bool get completed;
+  String get id;
+}
+
+class DayWorkout extends DayItem {
+  @override
+  final String id;
+  @override
+  final int sortOrder;
+  @override
+  final bool completed;
+  final String workoutId;
+  final String workoutName;
+  final WorkoutCategory category;
+  final String? tutorialVideoUrl;
+  final int sets;
+  final int reps;
+
+  DayWorkout({
+    required this.id,
+    required this.sortOrder,
+    required this.completed,
+    required this.workoutId,
+    required this.workoutName,
+    required this.category,
+    this.tutorialVideoUrl,
+    required this.sets,
+    required this.reps,
+  });
+}
+
+class DayProgram extends DayItem {
+  @override
+  final String id;
+  @override
+  final int sortOrder;
+  @override
+  final bool completed;
+  final String programId;
+  final String programName;
+  final String? programDescription;
+  final int workoutCount;
+
+  DayProgram({
+    required this.id,
+    required this.sortOrder,
+    required this.completed,
+    required this.programId,
+    required this.programName,
+    this.programDescription,
+    required this.workoutCount,
+  });
+}
+
+DayItem dayItemFromJson(Map<String, dynamic> json) {
+  final type = json['type'] as String;
+  if (type == 'program') {
+    return DayProgram(
+      id: json['id'] as String,
+      sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
+      completed: json['completed'] as bool? ?? false,
+      programId: json['program_id'] as String,
+      programName: json['program_name'] as String? ?? '',
+      programDescription: json['program_description'] as String?,
+      workoutCount: (json['workout_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+  return DayWorkout(
+    id: json['id'] as String,
+    sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
+    completed: json['completed'] as bool? ?? false,
+    workoutId: json['workout_id'] as String,
+    workoutName: json['workout_name'] as String? ?? '',
+    category: WorkoutCategory.fromValue(json['category'] as String? ?? 'STRENGTH'),
+    tutorialVideoUrl: json['tutorial_video_url'] as String?,
+    sets: (json['sets'] as num?)?.toInt() ?? 3,
+    reps: (json['reps'] as num?)?.toInt() ?? 10,
+  );
 }
 
 class ProgramWorkoutItem {

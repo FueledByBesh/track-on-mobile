@@ -31,7 +31,7 @@ class _HomePageState extends State<HomePage> {
       final isOnline = context.read<ConnectivityProvider>().isOnline;
       context.read<StepsProvider>().loadSteps(isOnline: isOnline);
       final fitness = context.read<FitnessProvider>();
-      fitness.loadPlannedWorkouts();
+      fitness.loadDayItems();
       // Warm the library cache so tapping a planned workout card
       // can open the full AboutWorkoutPage without a round trip.
       fitness.loadWorkoutLibrary();
@@ -93,7 +93,7 @@ class HomePageBody extends StatelessWidget {
     final showFitnessBanner =
         fitnessStatus != AppPermissionStatus.granted &&
         fitnessStatus != AppPermissionStatus.unknown;
-    final plannedWorkouts = fitnessProvider.plannedWorkouts;
+    final dayItems = fitnessProvider.dayItems;
 
     final todaySteps = stepsProvider.today;
     final dayLabels = _buildDayLabels();
@@ -164,7 +164,7 @@ class HomePageBody extends StatelessWidget {
                         ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                   Text(
-                    '${plannedWorkouts.length} workouts',
+                    '${dayItems.length} items',
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
@@ -173,7 +173,7 @@ class HomePageBody extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              if (plannedWorkouts.isEmpty)
+              if (dayItems.isEmpty)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(24),
@@ -194,9 +194,12 @@ class HomePageBody extends StatelessWidget {
                   ),
                 )
               else
-                ...plannedWorkouts.map((pw) => Padding(
+                ...dayItems.map((item) => Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: _WorkoutCard(plannedWorkout: pw),
+                  child: switch (item) {
+                    DayWorkout dw => _WorkoutCard(dayWorkout: dw),
+                    DayProgram dp => _HomeProgramCard(dayProgram: dp),
+                  },
                 )),
             ],
           ),
@@ -291,25 +294,29 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
 }
 
 class _WorkoutCard extends StatelessWidget {
-  final PlannedWorkout plannedWorkout;
+  final DayWorkout dayWorkout;
 
-  const _WorkoutCard({required this.plannedWorkout});
-
-  Color get _typeColor {
-    switch (plannedWorkout.category.value) {
-      case 'STRENGTH': return const Color(0xFF6B5FFF);
-      case 'CROSSFIT': return Colors.deepOrange;
-      case 'CARDIO': return Colors.red;
-      case 'YOGA': return Colors.green;
-      case 'MOBILITY': return Colors.teal;
-      default: return const Color(0xFF6B5FFF);
-    }
-  }
+  const _WorkoutCard({required this.dayWorkout});
 
   @override
   Widget build(BuildContext context) {
+    final dw = dayWorkout;
     return GestureDetector(
-      onTap: () => openAboutWorkoutFromPlanned(context, plannedWorkout),
+      onTap: () {
+        final pw = PlannedWorkout(
+          id: dw.id,
+          workoutId: dw.workoutId,
+          workoutName: dw.workoutName,
+          category: dw.category,
+          tutorialVideoUrl: dw.tutorialVideoUrl,
+          plannedDate: '',
+          sets: dw.sets,
+          reps: dw.reps,
+          completed: dw.completed,
+          sortOrder: dw.sortOrder,
+        );
+        openAboutWorkoutFromPlanned(context, pw);
+      },
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -320,7 +327,7 @@ class _WorkoutCard extends StatelessWidget {
         child: Row(
           children: [
             WorkoutThumbnail(
-              videoUrl: plannedWorkout.tutorialVideoUrl,
+              videoUrl: dw.tutorialVideoUrl,
               size: WorkoutThumbnailSize.small,
             ),
             const SizedBox(width: 12),
@@ -329,35 +336,23 @@ class _WorkoutCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    plannedWorkout.workoutName,
+                    dw.workoutName,
                     style: Theme.of(context)
                         .textTheme
                         .titleSmall
                         ?.copyWith(fontWeight: FontWeight.w600),
                   ),
-                  Row(
-                    children: [
-                      Text(
-                        '${plannedWorkout.sets} sets x ${plannedWorkout.reps} reps',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Colors.grey),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        plannedWorkout.category.label,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: _typeColor,
-                              fontWeight: FontWeight.w500,
-                            ),
-                      ),
-                    ],
+                  Text(
+                    '${dw.sets} sets x ${dw.reps} reps',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: Colors.grey),
                   ),
                 ],
               ),
             ),
-            if (plannedWorkout.completed)
+            if (dw.completed)
               Container(
                 width: 24,
                 height: 24,
@@ -380,6 +375,85 @@ class _WorkoutCard extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _HomeProgramCard extends StatelessWidget {
+  final DayProgram dayProgram;
+  const _HomeProgramCard({required this.dayProgram});
+
+  @override
+  Widget build(BuildContext context) {
+    final dp = dayProgram;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: dp.completed
+              ? Colors.green.shade200
+              : const Color(0xFF6B5FFF).withAlpha(60),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              color: dp.completed
+                  ? Colors.green.withAlpha(40)
+                  : const Color(0xFF6B5FFF).withAlpha(30),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: Icon(
+                dp.completed ? Icons.check_circle : Icons.list_alt,
+                color: dp.completed ? Colors.green : const Color(0xFF6B5FFF),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  dp.programName,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                Text(
+                  '${dp.workoutCount} exercises',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF6B5FFF).withAlpha(20),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Text(
+              'PROGRAM',
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF6B5FFF),
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
