@@ -268,10 +268,14 @@ class FitnessProvider extends ChangeNotifier {
     List<Map<String, dynamic>>? items,
   }) async {
     try {
-      await _programService.update(id, name, items ?? []);
-      // The existing update replaces items. For schedule/description/active
-      // we need the extended DTO — but the current mobile ProgramApiService
-      // still sends the old shape. We'll extend it to send the full body.
+      await _programService.update(
+        id,
+        name: name,
+        description: description,
+        active: active,
+        schedule: schedule,
+        items: items,
+      );
       await loadPrograms();
     } catch (e) {
       debugPrint('Error updating program: $e');

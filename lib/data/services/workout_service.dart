@@ -50,10 +50,20 @@ class ProgramApiService {
     return WorkoutProgram.fromJson(response.data);
   }
 
-  Future<WorkoutProgram> update(String id, String name, List<Map<String, dynamic>> items) async {
+  Future<WorkoutProgram> update(
+    String id, {
+    required String name,
+    String? description,
+    bool? active,
+    List<int>? schedule,
+    List<Map<String, dynamic>>? items,
+  }) async {
     final response = await _api.dio.put('/api/programs/$id', data: {
       'name': name,
-      'items': items,
+      if (description != null) 'description': description,
+      if (active != null) 'active': active,
+      if (schedule != null) 'schedule': schedule,
+      if (items != null) 'items': items,
     });
     return WorkoutProgram.fromJson(response.data);
   }
