@@ -61,6 +61,38 @@ class ProgramApiService {
   Future<void> delete(String id) async {
     await _api.dio.delete('/api/programs/$id');
   }
+
+  /// Per-row toggle endpoint — atomic add of a single workout to a
+  /// single program. Returns the updated program so the caller can
+  /// re-render in one round trip. 409 if already in program.
+  Future<WorkoutProgram> addWorkoutToProgram(
+    String programId,
+    String workoutId, {
+    int? customSets,
+    int? customReps,
+  }) async {
+    final response = await _api.dio.post(
+      '/api/programs/$programId/workouts',
+      data: {
+        'workout_id': workoutId,
+        if (customSets != null) 'custom_sets': customSets,
+        if (customReps != null) 'custom_reps': customReps,
+      },
+    );
+    return WorkoutProgram.fromJson(response.data);
+  }
+
+  /// Per-row toggle endpoint — remove a single workout from a program.
+  /// Returns the updated program.
+  Future<WorkoutProgram> removeWorkoutFromProgram(
+    String programId,
+    String workoutId,
+  ) async {
+    final response = await _api.dio.delete(
+      '/api/programs/$programId/workouts/$workoutId',
+    );
+    return WorkoutProgram.fromJson(response.data);
+  }
 }
 
 class PlannedWorkoutApiService {
@@ -114,6 +146,26 @@ class PlannedWorkoutApiService {
       'program_id': programId,
       'planned_date': plannedDate,
     });
+    return (response.data as List).map((e) => PlannedWorkout.fromJson(e)).toList();
+  }
+
+  /// Batch-add one workout to many days in a single transaction.
+  /// Used by the "Add to day" calendar sheet.
+  Future<List<PlannedWorkout>> batchAddWorkout({
+    required String workoutId,
+    required List<String> dates,
+    int? customSets,
+    int? customReps,
+  }) async {
+    final response = await _api.dio.post(
+      '/api/planned-workouts/batch',
+      data: {
+        'workout_id': workoutId,
+        'dates': dates,
+        if (customSets != null) 'custom_sets': customSets,
+        if (customReps != null) 'custom_reps': customReps,
+      },
+    );
     return (response.data as List).map((e) => PlannedWorkout.fromJson(e)).toList();
   }
 }

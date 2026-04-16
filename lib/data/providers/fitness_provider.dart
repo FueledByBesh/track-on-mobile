@@ -220,4 +220,67 @@ class FitnessProvider extends ChangeNotifier {
       debugPrint('Error deleting program: $e');
     }
   }
+
+  /// Checks local program state — "is this workout already in this
+  /// program?" Pure function over the cached programs list, no network.
+  bool isWorkoutInProgram(String programId, String workoutId) {
+    final program = _programs.firstWhere(
+      (p) => p.id == programId,
+      orElse: () => WorkoutProgram(id: '', name: '', items: []),
+    );
+    return program.items.any((item) => item.workoutId == workoutId);
+  }
+
+  /// Per-row toggle action for the "Add to Program" sheet. Surfaces
+  /// errors to the caller so the UI can keep the row in its previous
+  /// state on failure (e.g. 409 duplicate, network error).
+  Future<void> addWorkoutToProgram(String programId, String workoutId) async {
+    final updated =
+        await _programService.addWorkoutToProgram(programId, workoutId);
+    _replaceProgramInCache(updated);
+    notifyListeners();
+  }
+
+  Future<void> removeWorkoutFromProgram(
+      String programId, String workoutId) async {
+    final updated =
+        await _programService.removeWorkoutFromProgram(programId, workoutId);
+    _replaceProgramInCache(updated);
+    notifyListeners();
+  }
+
+  /// Batch-add one workout to many days. Used by the "Add to day" sheet.
+  Future<void> addWorkoutToDays(
+      String workoutId, List<DateTime> dates) async {
+    if (dates.isEmpty) return;
+    final dateStrings =
+        dates.map((d) => d.toIso8601String().split('T')[0]).toList();
+    await _plannedService.batchAddWorkout(
+      workoutId: workoutId,
+      dates: dateStrings,
+    );
+    // Refresh whichever date is currently selected in MyDayTab
+    await loadPlannedWorkouts();
+  }
+
+  void _replaceProgramInCache(WorkoutProgram updated) {
+    final index = _programs.indexWhere((p) => p.id == updated.id);
+    if (index >= 0) {
+      _programs[index] = updated;
+    } else {
+      _programs.add(updated);
+    }
+  }
+
+  /// Create a new program with a starting workout in one shot.
+  /// Used by the "Create new program" flow in the Add-to-Program sheet.
+  Future<WorkoutProgram> createProgramWithWorkout(
+      String name, String workoutId) async {
+    final program = await _programService.create(name, [
+      {'workout_id': workoutId},
+    ]);
+    _programs.add(program);
+    notifyListeners();
+    return program;
+  }
 }

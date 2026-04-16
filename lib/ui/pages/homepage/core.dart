@@ -10,6 +10,7 @@ import 'package:trackon_mobile/data/services/permission_service.dart';
 import 'package:trackon_mobile/data/models/workout.dart';
 import 'package:trackon_mobile/data/models/daily_steps.dart';
 import 'package:trackon_mobile/ui/pages/logs/logs_page.dart';
+import 'package:trackon_mobile/ui/pages/workout/about_workout_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/notifications_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/profile_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/settings_page.dart';
@@ -28,7 +29,11 @@ class _HomePageState extends State<HomePage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final isOnline = context.read<ConnectivityProvider>().isOnline;
       context.read<StepsProvider>().loadSteps(isOnline: isOnline);
-      context.read<FitnessProvider>().loadPlannedWorkouts();
+      final fitness = context.read<FitnessProvider>();
+      fitness.loadPlannedWorkouts();
+      // Warm the library cache so tapping a planned workout card
+      // can open the full AboutWorkoutPage without a round trip.
+      fitness.loadWorkoutLibrary();
     });
   }
 
@@ -303,12 +308,7 @@ class _WorkoutCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        context.read<FitnessProvider>().toggleWorkoutCompleted(
-          plannedWorkout.id,
-          !plannedWorkout.completed,
-        );
-      },
+      onTap: () => openAboutWorkoutFromPlanned(context, plannedWorkout),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(

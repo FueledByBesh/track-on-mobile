@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/providers/fitness_provider.dart';
 import 'package:trackon_mobile/data/models/workout.dart';
+import 'package:trackon_mobile/ui/pages/workout/about_workout_page.dart';
 
 class FitnessPage extends StatefulWidget {
   const FitnessPage({super.key});
@@ -218,7 +219,7 @@ class _PlannedWorkoutCard extends StatelessWidget {
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       child: GestureDetector(
-        onTap: () => context.read<FitnessProvider>().toggleWorkoutCompleted(plannedWorkout.id, !plannedWorkout.completed),
+        onTap: () => openAboutWorkoutFromPlanned(context, plannedWorkout),
         child: Container(
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.all(12),
@@ -229,10 +230,35 @@ class _PlannedWorkoutCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Container(
-                width: 50, height: 50,
-                decoration: BoxDecoration(color: const Color(0xFF6B5FFF).withAlpha(30), borderRadius: BorderRadius.circular(8)),
-                child: const Center(child: Icon(Icons.fitness_center, color: Color(0xFF6B5FFF))),
+              // Tapping only the check icon toggles completion — avoids
+              // navigating when the user just wants to mark it done.
+              GestureDetector(
+                onTap: () => context
+                    .read<FitnessProvider>()
+                    .toggleWorkoutCompleted(
+                      plannedWorkout.id,
+                      !plannedWorkout.completed,
+                    ),
+                child: Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: plannedWorkout.completed
+                        ? Colors.green.withAlpha(40)
+                        : const Color(0xFF6B5FFF).withAlpha(30),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      plannedWorkout.completed
+                          ? Icons.check_circle
+                          : Icons.fitness_center,
+                      color: plannedWorkout.completed
+                          ? Colors.green
+                          : const Color(0xFF6B5FFF),
+                    ),
+                  ),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -246,7 +272,7 @@ class _PlannedWorkoutCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(plannedWorkout.completed ? Icons.check_circle : Icons.circle_outlined, color: plannedWorkout.completed ? Colors.green : Colors.grey.shade300),
+              const Icon(Icons.chevron_right, color: Colors.grey),
             ],
           ),
         ),
@@ -584,10 +610,14 @@ class _WorkoutCardLibrary extends StatelessWidget {
     final topMuscles = workout.muscles.take(3).toList();
 
     return GestureDetector(
-      onTap: () => showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        builder: (_) => _WorkoutDetailSheet(workout: workout),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AboutWorkoutPage(
+            workout: workout,
+            pageContext: const AboutWorkoutContext.library(),
+          ),
+        ),
       ),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
@@ -750,181 +780,6 @@ class _MetaPill extends StatelessWidget {
   }
 }
 
-class _WorkoutDetailSheet extends StatelessWidget {
-  final Workout workout;
-  const _WorkoutDetailSheet({required this.workout});
-
-  @override
-  Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      initialChildSize: 0.65,
-      minChildSize: 0.4,
-      maxChildSize: 0.9,
-      expand: false,
-      builder: (context, scrollController) {
-        return SingleChildScrollView(
-          controller: scrollController,
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6B5FFF).withAlpha(30),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  workout.category.label,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF6B5FFF),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                workout.name,
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _MetaPill(
-                    icon: Icons.repeat,
-                    label:
-                        '${workout.recommendedSets} sets × ${workout.recommendedReps} reps',
-                  ),
-                  if (workout.approxDurationMinutes != null)
-                    _MetaPill(
-                      icon: Icons.timer_outlined,
-                      label: '${workout.approxDurationMinutes} min',
-                    ),
-                  if (workout.restTimeSeconds != null)
-                    _MetaPill(
-                      icon: Icons.pause_circle_outline,
-                      label: '${workout.restTimeSeconds}s rest',
-                    ),
-                ],
-              ),
-              if (workout.muscles.isNotEmpty) ...[
-                const SizedBox(height: 24),
-                Text('Targeted muscles',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 12),
-                ...workout.muscles.map((m) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              m.name,
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                          ),
-                          SizedBox(
-                            width: 140,
-                            child: Stack(
-                              children: [
-                                Container(
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade200,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                ),
-                                FractionallySizedBox(
-                                  widthFactor: m.percentage / 100.0,
-                                  child: Container(
-                                    height: 8,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF6B5FFF),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            width: 36,
-                            child: Text(
-                              '${m.percentage}%',
-                              textAlign: TextAlign.right,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade700,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )),
-              ],
-              if (workout.tutorialVideoUrl != null) ...[
-                const SizedBox(height: 24),
-                Text('Video tutorial',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 12),
-                Container(
-                  height: 120,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Center(
-                    child: Icon(Icons.play_circle_outline,
-                        size: 50, color: Color(0xFF6B5FFF)),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: () {
-                    context.read<FitnessProvider>().addWorkoutToDay(workout.id);
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('${workout.name} added to today')),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6B5FFF),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    'Add to Today',
-                    style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
 
 // ============ TRAINING SESSION ============
 
