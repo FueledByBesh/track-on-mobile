@@ -355,11 +355,17 @@ class _PlannedProgramCard extends StatelessWidget {
       ),
       child: GestureDetector(
         onTap: () {
-          // TODO: navigate to ProgramDetailPage when it's built.
-          // For now, toggle completed.
-          context
-              .read<FitnessProvider>()
-              .toggleProgramCompleted(dp.id, !dp.completed);
+          final provider = context.read<FitnessProvider>();
+          final program = provider.programs.firstWhere(
+            (p) => p.id == dp.programId,
+            orElse: () => WorkoutProgram(
+                id: dp.programId, name: dp.programName, items: []),
+          );
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => ProgramDetailPage(program: program)),
+          );
         },
         child: Container(
           margin: const EdgeInsets.only(bottom: 10),

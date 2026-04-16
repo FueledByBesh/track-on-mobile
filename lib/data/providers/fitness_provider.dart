@@ -129,6 +129,24 @@ class FitnessProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _hasTriggeredScheduleGen = false;
+
+  /// Trigger schedule generation once per session on the backend.
+  /// Idempotent — existing rows are skipped. Fire-and-forget so it
+  /// doesn't block the UI.
+  Future<void> _triggerScheduleGenOnce() async {
+    if (_hasTriggeredScheduleGen) return;
+    _hasTriggeredScheduleGen = true;
+    try {
+      final created = await _plannedService.generateSchedule();
+      if (created > 0) {
+        debugPrint('Schedule gen created $created rows');
+      }
+    } catch (e) {
+      debugPrint('Schedule generation failed: $e');
+    }
+  }
+
   Future<void> loadPrograms() async {
     if (!_hasLoadedPrograms) {
       _isLoading = true;
@@ -147,6 +165,9 @@ class FitnessProvider extends ChangeNotifier {
   /// Load the merged My Day timeline (workouts + programs) for the
   /// currently selected date.
   Future<void> loadDayItems() async {
+    // Best-effort schedule generation on first load — ensures the
+    // upcoming week is populated before we query the day items.
+    _triggerScheduleGenOnce();
     if (!_hasLoadedPlanned) {
       _isLoading = true;
       notifyListeners();
@@ -223,6 +244,17 @@ class FitnessProvider extends ChangeNotifier {
       await loadDayItems();
     } catch (e) {
       debugPrint('Error deleting planned program: $e');
+    }
+  }
+
+  /// Fetch upcoming scheduled dates for a program (next 14 days).
+  /// Used by the ProgramDetailPage "Upcoming" section.
+  Future<List<Map<String, dynamic>>> getUpcoming(String programId) async {
+    try {
+      return await _plannedService.getUpcoming(programId);
+    } catch (e) {
+      debugPrint('Error fetching upcoming: $e');
+      return [];
     }
   }
 

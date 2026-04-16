@@ -225,6 +225,14 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
               return _readOnlyItemCard(context, item, index);
             }),
 
+          // Upcoming section — only in view mode, only if scheduled
+          if (!_editing && program.schedule.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            _sectionLabel('Upcoming'),
+            const SizedBox(height: 8),
+            _UpcomingSection(programId: program.id),
+          ],
+
           const SizedBox(height: 80),
         ],
       ),
@@ -437,6 +445,108 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
         color: Colors.grey.shade500,
         letterSpacing: 0.5,
       ),
+    );
+  }
+}
+
+/// Async-loaded list of the next 2 weeks of scheduled dates for a
+/// program. Fetches on mount, shows a small spinner while loading.
+class _UpcomingSection extends StatefulWidget {
+  final String programId;
+  const _UpcomingSection({required this.programId});
+
+  @override
+  State<_UpcomingSection> createState() => _UpcomingSectionState();
+}
+
+class _UpcomingSectionState extends State<_UpcomingSection> {
+  List<Map<String, dynamic>>? _upcoming;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final data = await context.read<FitnessProvider>().getUpcoming(widget.programId);
+    if (mounted) {
+      setState(() {
+        _upcoming = data;
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    if (_upcoming == null || _upcoming!.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text(
+          'No upcoming dates scheduled.',
+          style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+        ),
+      );
+    }
+    return Column(
+      children: _upcoming!.map((row) {
+        final dateStr = row['planned_date'] as String? ?? '';
+        final completed = row['completed'] as bool? ?? false;
+        return Container(
+          margin: const EdgeInsets.only(bottom: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: completed ? Colors.green.shade50 : Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: completed ? Colors.green.shade200 : Colors.grey.shade200,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                completed ? Icons.check_circle : Icons.event,
+                size: 18,
+                color: completed ? Colors.green : const Color(0xFF6B5FFF),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                dateStr,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: completed ? Colors.green.shade700 : Colors.grey.shade800,
+                  decoration: completed ? TextDecoration.lineThrough : null,
+                ),
+              ),
+              const Spacer(),
+              if (completed)
+                Text(
+                  'Done',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.green.shade600,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 }

@@ -180,6 +180,25 @@ class PlannedWorkoutApiService {
     await _api.dio.delete('/api/planned-programs/$id');
   }
 
+  /// Trigger schedule generation for all active programs. Called on
+  /// app open so the upcoming week is always populated.
+  Future<int> generateSchedule() async {
+    final response = await _api.dio.post('/api/programs/generate-schedule');
+    return (response.data['created'] as num?)?.toInt() ?? 0;
+  }
+
+  /// Upcoming scheduled dates for a specific program (next N days).
+  Future<List<Map<String, dynamic>>> getUpcoming(
+      String programId, {int days = 14}) async {
+    final response = await _api.dio.get(
+      '/api/planned-programs/upcoming',
+      queryParameters: {'program_id': programId, 'days': days},
+    );
+    return (response.data as List)
+        .map((e) => e as Map<String, dynamic>)
+        .toList();
+  }
+
   /// Batch-add one workout to many days in a single transaction.
   /// Used by the "Add to day" calendar sheet.
   Future<List<PlannedWorkout>> batchAddWorkout({
