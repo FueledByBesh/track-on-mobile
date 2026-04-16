@@ -10,7 +10,17 @@ const _weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 class ProgramDetailPage extends StatefulWidget {
   final WorkoutProgram program;
-  const ProgramDetailPage({super.key, required this.program});
+
+  /// When non-null, the user reached this page by tapping a scheduled
+  /// program card on My Day. "Start Training" will mark this
+  /// planned_program as completed when the session finishes.
+  final String? plannedProgramId;
+
+  const ProgramDetailPage({
+    super.key,
+    required this.program,
+    this.plannedProgramId,
+  });
 
   @override
   State<ProgramDetailPage> createState() => _ProgramDetailPageState();
@@ -293,8 +303,10 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  TrainingSessionPage(workouts: workouts),
+                              builder: (_) => TrainingSessionPage(
+                                workouts: workouts,
+                                plannedProgramId: widget.plannedProgramId,
+                              ),
                             ),
                           );
                         },

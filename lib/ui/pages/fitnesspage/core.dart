@@ -141,7 +141,10 @@ class MyDayTab extends StatelessWidget {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (_) => TrainingSessionPage(workouts: workoutItems),
+                                        builder: (_) => TrainingSessionPage(
+                                          workouts: workoutItems,
+                                          isStandaloneWorkouts: true,
+                                        ),
                                       ),
                                     );
                                   }
@@ -364,7 +367,10 @@ class _PlannedProgramCard extends StatelessWidget {
           Navigator.push(
             context,
             MaterialPageRoute(
-                builder: (_) => ProgramDetailPage(program: program)),
+                builder: (_) => ProgramDetailPage(
+                  program: program,
+                  plannedProgramId: dp.id,
+                )),
           );
         },
         child: Container(
@@ -1021,7 +1027,29 @@ class _MetaPill extends StatelessWidget {
 
 class TrainingSessionPage extends StatefulWidget {
   final List<PlannedWorkout> workouts;
-  const TrainingSessionPage({super.key, required this.workouts});
+
+  /// When non-null, this session was started from a scheduled program
+  /// card on My Day. Completing the last exercise auto-marks the whole
+  /// planned_program as done via a single API call. Individual exercises
+  /// are NOT marked on the server — per-exercise completion is in-memory
+  /// only for programs (since they're a single card, not exploded rows).
+  ///
+  /// When null, this is either a standalone-workouts session (each
+  /// exercise IS a planned_workout row) or a practice session from the
+  /// program template (no server calls at all).
+  final String? plannedProgramId;
+
+  /// True when the workouts are standalone planned_workout rows (from
+  /// the My Day timeline's individual workout cards). Each exercise has
+  /// its own planned_workout ID and should be marked completed per-row.
+  final bool isStandaloneWorkouts;
+
+  const TrainingSessionPage({
+    super.key,
+    required this.workouts,
+    this.plannedProgramId,
+    this.isStandaloneWorkouts = false,
+  });
 
   @override
   State<TrainingSessionPage> createState() => _TrainingSessionPageState();
@@ -1055,10 +1083,21 @@ class _TrainingSessionPageState extends State<TrainingSessionPage> {
   }
 
   void _finishWorkout() {
-    if (_currentWorkout != null) {
+    // Per-exercise server completion ONLY for standalone planned_workout
+    // rows. Program exercises are tracked in memory — the whole program
+    // gets one completion call when the session ends.
+    if (widget.isStandaloneWorkouts && _currentWorkout != null) {
       context.read<FitnessProvider>().toggleWorkoutCompleted(_currentWorkout!.id, true);
     }
+
     if (_isLastWorkout) {
+      // If this is a program session, mark the planned_program as done.
+      if (widget.plannedProgramId != null) {
+        context.read<FitnessProvider>().toggleProgramCompleted(
+          widget.plannedProgramId!,
+          true,
+        );
+      }
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Training complete!')));
     } else {
