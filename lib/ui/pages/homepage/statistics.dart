@@ -1,7 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'dart:math' as math;
 
 enum StatsItemType {
   steps(Icons.directions_walk, 'Steps'),
@@ -18,12 +19,14 @@ class StatisticsData {
   final String todayValue;
   final List<double> weeklyData; // 7 values, oldest first, today last
   final List<String> dayLabels;  // 7 labels matching weeklyData
+  final int? goal; // step goal — used for the ring on the steps card
 
   const StatisticsData({
     required this.type,
     required this.todayValue,
     required this.weeklyData,
     required this.dayLabels,
+    this.goal,
   });
 }
 
@@ -389,6 +392,7 @@ class _StatisticsContainerState extends State<StatisticsContainer>
                     data: prepared[0],
                     weeklyData: widget.data[0].weeklyData,
                     dayLabels: widget.data[0].dayLabels,
+                    goal: widget.data[0].goal,
                     isExpanded: expanded == 'a',
                     onRefresh: widget.onRefresh,
                     isSyncing: widget.isSyncing,
@@ -404,6 +408,7 @@ class _StatisticsContainerState extends State<StatisticsContainer>
                     data: prepared[1],
                     weeklyData: widget.data[1].weeklyData,
                     dayLabels: widget.data[1].dayLabels,
+                    goal: widget.data[1].goal,
                     isExpanded: expanded == 'b',
                   ),
                 ),
@@ -417,6 +422,7 @@ class _StatisticsContainerState extends State<StatisticsContainer>
                     data: prepared[2],
                     weeklyData: widget.data[2].weeklyData,
                     dayLabels: widget.data[2].dayLabels,
+                    goal: widget.data[2].goal,
                     isExpanded: expanded == 'c',
                   ),
                 ),
@@ -429,15 +435,23 @@ class _StatisticsContainerState extends State<StatisticsContainer>
   }
 }
 
-// ============ INDIVIDUAL BAR ============
+
+// ============ INDIVIDUAL BAR (gradient-styled) ============
 
 class StatsItem extends StatelessWidget {
   final PreparedItemData data;
   final List<double> weeklyData;
   final List<String> dayLabels;
+  final int? goal;
   final bool isExpanded;
   final VoidCallback? onRefresh;
   final bool isSyncing;
+
+  static const _gradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF6B5FFF), Color(0xFF8B7FFF)],
+  );
 
   const StatsItem({
     super.key,
@@ -445,6 +459,7 @@ class StatsItem extends StatelessWidget {
     required this.weeklyData,
     required this.dayLabels,
     required this.isExpanded,
+    this.goal,
     this.onRefresh,
     this.isSyncing = false,
   });
@@ -454,13 +469,13 @@ class StatsItem extends StatelessWidget {
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: _gradient,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withAlpha(15),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+            color: const Color(0xFF6B5FFF).withAlpha(40),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -470,9 +485,14 @@ class StatsItem extends StatelessWidget {
     );
   }
 
+  // ─── EXPANDED: gradient bg + white bar chart ───
+
   Widget _buildExpandedView(BuildContext context) {
-    final color = Theme.of(context).colorScheme.primary;
-    final maxY = weeklyData.isEmpty ? 1.0 : weeklyData.reduce((a, b) => a > b ? a : b);
+    final maxY = weeklyData.isEmpty
+        ? 1.0
+        : weeklyData.reduce((a, b) => a > b ? a : b);
+    final goalY = (goal != null && goal! > 0) ? goal!.toDouble() : null;
+    final chartMaxY = math.max(maxY, goalY ?? 0) * 1.15;
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -484,20 +504,30 @@ class StatsItem extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: color.withAlpha(25),
+                  color: Colors.white.withAlpha(30),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(data.type.icon, color: color, size: 22),
+                child: Icon(data.type.icon, color: Colors.white, size: 20),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(data.type.label, style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+                    Text(
+                      data.type.label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withAlpha(180),
+                      ),
+                    ),
                     Text(
                       data.collapsedDisplayValue,
-                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: color),
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
                     ),
                   ],
                 ),
@@ -505,10 +535,22 @@ class StatsItem extends StatelessWidget {
               if (onRefresh != null)
                 GestureDetector(
                   onTap: isSyncing ? null : onRefresh,
-                  child: isSyncing
-                      ? SizedBox(width: 20, height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: color))
-                      : Icon(Icons.refresh, color: Colors.grey.shade400, size: 22),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withAlpha(25),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: isSyncing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : Icon(Icons.refresh,
+                            color: Colors.white.withAlpha(180), size: 20),
+                  ),
                 ),
             ],
           ),
@@ -517,13 +559,34 @@ class StatsItem extends StatelessWidget {
             child: BarChart(
               BarChartData(
                 alignment: BarChartAlignment.spaceAround,
-                maxY: maxY > 0 ? maxY * 1.15 : 1,
+                maxY: chartMaxY > 0 ? chartMaxY : 1,
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
                   getDrawingHorizontalLine: (value) =>
-                      FlLine(color: Colors.grey.withAlpha(30), strokeWidth: 1),
+                      FlLine(color: Colors.white.withAlpha(20), strokeWidth: 1),
                 ),
+                extraLinesData: goalY != null
+                    ? ExtraLinesData(horizontalLines: [
+                        HorizontalLine(
+                          y: goalY,
+                          color: Colors.white.withAlpha(60),
+                          strokeWidth: 1,
+                          dashArray: [6, 4],
+                          label: HorizontalLineLabel(
+                            show: true,
+                            alignment: Alignment.topRight,
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.white.withAlpha(140),
+                              fontWeight: FontWeight.w600,
+                            ),
+                            labelResolver: (_) =>
+                                '${(goalY / 1000).toStringAsFixed(0)}k',
+                          ),
+                        ),
+                      ])
+                    : const ExtraLinesData(),
                 titlesData: FlTitlesData(
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
@@ -531,17 +594,28 @@ class StatsItem extends StatelessWidget {
                       reservedSize: 19,
                       getTitlesWidget: (value, meta) {
                         final i = value.toInt();
-                        if (i < 0 || i >= dayLabels.length) return const SizedBox.shrink();
+                        if (i < 0 || i >= dayLabels.length) {
+                          return const SizedBox.shrink();
+                        }
                         return SideTitleWidget(
                           meta: meta,
-                          child: Text(dayLabels[i], style: const TextStyle(fontSize: 10)),
+                          child: Text(
+                            dayLabels[i],
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.white.withAlpha(150),
+                            ),
+                          ),
                         );
                       },
                     ),
                   ),
-                  leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  leftTitles:
+                      const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles:
+                      const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles:
+                      const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 ),
                 borderData: FlBorderData(show: false),
                 barGroups: List.generate(weeklyData.length, (i) {
@@ -550,7 +624,7 @@ class StatsItem extends StatelessWidget {
                     barRods: [
                       BarChartRodData(
                         toY: weeklyData[i],
-                        color: color,
+                        color: Colors.white.withAlpha(200),
                         width: 16,
                         borderRadius: const BorderRadius.only(
                           topLeft: Radius.circular(4),
@@ -562,10 +636,16 @@ class StatsItem extends StatelessWidget {
                 }),
                 barTouchData: BarTouchData(
                   touchTooltipData: BarTouchTooltipData(
+                    tooltipBorder: BorderSide.none,
+                    getTooltipColor: (_) => Colors.white.withAlpha(220),
                     getTooltipItem: (group, groupIndex, rod, rodIndex) {
                       return BarTooltipItem(
                         rod.toY.toInt().toString(),
-                        TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 13),
+                        const TextStyle(
+                          color: Color(0xFF6B5FFF),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
                       );
                     },
                   ),
@@ -578,8 +658,66 @@ class StatsItem extends StatelessWidget {
     );
   }
 
+  // ─── COLLAPSED: gradient bg, ring for steps, icon+number for others ───
+
   Widget _buildCollapsedView(BuildContext context) {
-    final color = Theme.of(context).colorScheme.primary;
+    final isSteps = data.type == StatsItemType.steps;
+
+    if (isSteps && goal != null && goal! > 0) {
+      return _buildStepsCollapsed();
+    }
+    return _buildGenericCollapsed();
+  }
+
+  Widget _buildStepsCollapsed() {
+    final todayValue = int.tryParse(data.collapsedDisplayValue.replaceAll(',', '').replaceAll('k', '000')) ?? 0;
+    final progress = goal! > 0 ? (todayValue / goal!).clamp(0.0, 1.0) : 0.0;
+
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Center(
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: CustomPaint(
+                  painter: _MiniRingPainter(
+                    progress: progress,
+                    strokeWidth: 6,
+                    trackColor: Colors.white.withAlpha(35),
+                    progressColor: Colors.white,
+                  ),
+                  child: Center(
+                    child: Text(
+                      data.collapsedDisplayValue,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            data.type.label,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.white.withAlpha(180),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGenericCollapsed() {
     return Padding(
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -588,23 +726,79 @@ class StatsItem extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: color.withAlpha(25),
+              color: Colors.white.withAlpha(30),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(data.type.icon, color: color, size: 22),
+            child: Icon(data.type.icon, color: Colors.white, size: 20),
           ),
           const Spacer(),
           Text(
             data.collapsedDisplayValue,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
           ),
           const SizedBox(height: 2),
           Text(
             data.type.label,
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withAlpha(180),
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
     );
   }
+}
+
+// ============ MINI RING PAINTER ============
+
+class _MiniRingPainter extends CustomPainter {
+  final double progress;
+  final double strokeWidth;
+  final Color trackColor;
+  final Color progressColor;
+
+  _MiniRingPainter({
+    required this.progress,
+    required this.strokeWidth,
+    required this.trackColor,
+    required this.progressColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (math.min(size.width, size.height) - strokeWidth) / 2;
+
+    final trackPaint = Paint()
+      ..color = trackColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+    canvas.drawCircle(center, radius, trackPaint);
+
+    if (progress > 0) {
+      final progressPaint = Paint()
+        ..color = progressColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round;
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        -math.pi / 2,
+        2 * math.pi * progress,
+        false,
+        progressPaint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MiniRingPainter old) =>
+      old.progress != progress;
 }

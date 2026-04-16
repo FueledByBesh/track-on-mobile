@@ -107,6 +107,7 @@ class HomePageBody extends StatelessWidget {
         todayValue: '${todaySteps.stepCount}',
         weeklyData: stepsWeekly,
         dayLabels: dayLabels,
+        goal: todaySteps.goal,
       ),
       StatisticsData(
         type: StatsItemType.activity,
