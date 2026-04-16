@@ -12,6 +12,7 @@ import 'package:trackon_mobile/data/models/daily_steps.dart';
 import 'package:trackon_mobile/ui/pages/logs/logs_page.dart';
 import 'package:trackon_mobile/ui/pages/workout/about_workout_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/notifications_page.dart';
+import 'package:trackon_mobile/ui/sharedwidgets/workout_thumbnail.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/profile_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/settings_page.dart';
 
@@ -318,14 +319,9 @@ class _WorkoutCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                color: _typeColor.withAlpha(100),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Center(child: Icon(Icons.fitness_center, color: _typeColor)),
+            WorkoutThumbnail(
+              videoUrl: plannedWorkout.tutorialVideoUrl,
+              size: WorkoutThumbnailSize.small,
             ),
             const SizedBox(width: 12),
             Expanded(

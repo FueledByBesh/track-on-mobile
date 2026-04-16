@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/providers/fitness_provider.dart';
 import 'package:trackon_mobile/data/models/workout.dart';
 import 'package:trackon_mobile/ui/pages/workout/about_workout_page.dart';
+import 'package:trackon_mobile/ui/sharedwidgets/workout_thumbnail.dart';
 
 class FitnessPage extends StatefulWidget {
   const FitnessPage({super.key});
@@ -239,26 +240,22 @@ class _PlannedWorkoutCard extends StatelessWidget {
                       plannedWorkout.id,
                       !plannedWorkout.completed,
                     ),
-                child: Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: plannedWorkout.completed
-                        ? Colors.green.withAlpha(40)
-                        : const Color(0xFF6B5FFF).withAlpha(30),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Center(
-                    child: Icon(
-                      plannedWorkout.completed
-                          ? Icons.check_circle
-                          : Icons.fitness_center,
-                      color: plannedWorkout.completed
-                          ? Colors.green
-                          : const Color(0xFF6B5FFF),
-                    ),
-                  ),
-                ),
+                child: plannedWorkout.completed
+                    ? Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color: Colors.green.withAlpha(40),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Center(
+                          child: Icon(Icons.check_circle, color: Colors.green),
+                        ),
+                      )
+                    : WorkoutThumbnail(
+                        videoUrl: plannedWorkout.tutorialVideoUrl,
+                        size: WorkoutThumbnailSize.small,
+                      ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -320,7 +317,7 @@ class MyProgramsTab extends StatelessWidget {
                           Container(
                             width: 60, height: 60,
                             decoration: BoxDecoration(color: const Color(0xFF6B5FFF).withAlpha(30), borderRadius: BorderRadius.circular(8)),
-                            child: const Center(child: Icon(Icons.fitness_center, color: Color(0xFF6B5FFF), size: 30)),
+                            child: const Center(child: Icon(Icons.folder_outlined, color: Color(0xFF6B5FFF), size: 30)),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -654,12 +651,24 @@ class _WorkoutCardLibrary extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              workout.name,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w600),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                WorkoutThumbnail(
+                  videoUrl: workout.tutorialVideoUrl,
+                  size: WorkoutThumbnailSize.medium,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    workout.name,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Row(
