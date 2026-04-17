@@ -87,7 +87,7 @@ class RunningHistorySheet extends StatelessWidget {
                             children: [
                               Row(
                                 children: [
-                                  Icon(icon, size: 18, color: const Color(0xFF6B5FFF)),
+                                  Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
                                   const SizedBox(width: 6),
                                   Text(
                                     dateStr,

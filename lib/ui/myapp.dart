@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/providers/auth_provider.dart';
 import 'package:trackon_mobile/data/providers/connectivity_provider.dart';
 import 'package:trackon_mobile/data/providers/activity_provider.dart';
+import 'package:trackon_mobile/data/providers/theme_provider.dart';
 import 'package:trackon_mobile/ui/pages/auth/login_page.dart';
 import 'package:trackon_mobile/ui/pages/homepage/core.dart';
 import 'package:trackon_mobile/ui/pages/fitnesspage/core.dart';
@@ -21,35 +22,28 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Make status bar transparent so map can draw underneath it
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
-      systemNavigationBarColor: Colors.transparent,
-    ));
+    final themeProvider = context.watch<ThemeProvider>();
+
+    // Adapt status bar icons to current brightness
+    final isDark =
+        themeProvider.mode == ThemeMode.dark ||
+        (themeProvider.mode == ThemeMode.system &&
+            MediaQuery.platformBrightnessOf(context) == Brightness.dark);
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        systemNavigationBarColor: Colors.transparent,
+      ),
+    );
 
     return MaterialApp(
       title: 'TrackOn',
       debugShowCheckedModeBanner: false,
       scaffoldMessengerKey: rootScaffoldMessengerKey,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6B5FFF),
-          brightness: Brightness.light,
-        ),
-        scaffoldBackgroundColor: const Color(0xFFFAFBFC),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFFFAFBFC),
-          elevation: 0,
-          centerTitle: true,
-          titleTextStyle: TextStyle(
-            color: Color(0xFF1C2A3A),
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
+      theme: themeProvider.lightTheme,
+      darkTheme: themeProvider.darkTheme,
+      themeMode: themeProvider.mode,
       home: const AuthWrapper(),
     );
   }
@@ -92,9 +86,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
     }
 
     if (authProvider.isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (!authProvider.isLoggedIn) {
@@ -136,10 +128,15 @@ class _MainNavigationState extends State<MainNavigation> {
           // Offline banner — sits above bottom nav
           if (!connectivity.isOnline)
             GestureDetector(
-              onTap: connectivity.isChecking ? null : () => connectivity.checkHealth(),
+              onTap: connectivity.isChecking
+                  ? null
+                  : () => connectivity.checkHealth(),
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
                 color: connectivity.offlineReason == OfflineReason.noConnection
                     ? Colors.grey.shade700
                     : Colors.orange.shade700,
@@ -156,13 +153,20 @@ class _MainNavigationState extends State<MainNavigation> {
                     Expanded(
                       child: Text(
                         connectivity.offlineMessage,
-                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                     if (connectivity.isChecking)
                       const SizedBox(
-                        width: 16, height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     else
                       const Text(
@@ -173,67 +177,84 @@ class _MainNavigationState extends State<MainNavigation> {
                 ),
               ),
             ),
-          // Bottom navigation bar
-          ClipRRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white.withAlpha(180),
-                  border: Border(
-                    top: BorderSide(color: Colors.grey.shade200, width: 0.5),
+          // Bottom navigation bar — theme-aware
+          Builder(builder: (context) {
+            final scheme = Theme.of(context).colorScheme;
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            final navBg = isDark
+                ? scheme.surface.withAlpha(220)
+                : scheme.surface.withAlpha(200);
+            final borderColor = isDark
+                ? Colors.grey.shade800
+                : Colors.grey.shade200;
+
+            return ClipRRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: navBg,
+                    border: Border(
+                      top: BorderSide(color: borderColor, width: 0.5),
+                    ),
                   ),
-                ),
-                child: BottomNavigationBar(
-                  currentIndex: _currentIndex,
-                  onTap: (index) {
-                    setState(() {
-                      _currentIndex = index;
-                    });
-                  },
-                  type: BottomNavigationBarType.fixed,
-                  backgroundColor: Colors.transparent,
-                  elevation: 0,
-                  selectedItemColor: const Color(0xFF6B5FFF),
-                  unselectedItemColor: Colors.grey,
-                  items: [
-                    const BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-                    BottomNavigationBarItem(
-                      icon: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          const Icon(Icons.directions_run),
-                          if (isRecording)
-                            Positioned(
-                              right: -2,
-                              top: -2,
-                              child: Container(
-                                width: 10,
-                                height: 10,
-                                decoration: BoxDecoration(
-                                  color: Colors.red,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white, width: 1.5),
+                  child: BottomNavigationBar(
+                    currentIndex: _currentIndex,
+                    onTap: (index) {
+                      setState(() {
+                        _currentIndex = index;
+                      });
+                    },
+                    type: BottomNavigationBarType.fixed,
+                    backgroundColor: Colors.transparent,
+                    elevation: 0,
+                    selectedItemColor: scheme.primary,
+                    unselectedItemColor: scheme.onSurfaceVariant,
+                    items: [
+                      const BottomNavigationBarItem(
+                        icon: Icon(Icons.home),
+                        label: 'Home',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            const Icon(Icons.directions_run),
+                            if (isRecording)
+                              Positioned(
+                                right: -2,
+                                top: -2,
+                                child: Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    color: scheme.error,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: scheme.surface,
+                                      width: 1.5,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
+                        label: 'Run',
                       ),
-                      label: 'Run',
-                    ),
-                    const BottomNavigationBarItem(
-                      icon: Icon(Icons.fitness_center),
-                      label: 'Fitness',
-                    ),
-                    const BottomNavigationBarItem(
-                      icon: Icon(Icons.group),
-                      label: 'Groups',
-                    ),
-                  ],
+                      const BottomNavigationBarItem(
+                        icon: Icon(Icons.fitness_center),
+                        label: 'Fitness',
+                      ),
+                      const BottomNavigationBarItem(
+                        icon: Icon(Icons.group),
+                        label: 'Groups',
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          }),
         ],
       ),
     );

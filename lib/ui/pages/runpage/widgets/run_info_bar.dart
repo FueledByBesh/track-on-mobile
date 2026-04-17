@@ -34,7 +34,7 @@ class RunInfoBar extends StatelessWidget {
           _Metric(
             label: 'Time',
             value: _formattedDuration,
-            color: const Color(0xFF6B5FFF),
+            color: Theme.of(context).colorScheme.primary,
             crossAxisAlignment: CrossAxisAlignment.start,
           ),
           _Metric(

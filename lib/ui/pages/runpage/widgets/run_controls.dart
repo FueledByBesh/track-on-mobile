@@ -56,7 +56,7 @@ class RunControls extends StatelessWidget {
             style: ElevatedButton.styleFrom(
               backgroundColor: isTracking
                   ? Colors.red.shade600
-                  : const Color(0xFF6B5FFF),
+                  : Theme.of(context).colorScheme.primary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -123,7 +123,7 @@ class _BigPrimaryButton extends StatelessWidget {
 
     if (!isTracking) {
       icon = Icons.play_arrow;
-      color = const Color(0xFF6B5FFF);
+      color = Theme.of(context).colorScheme.primary;
       onTap = onStart;
     } else if (isPaused) {
       icon = Icons.play_arrow;

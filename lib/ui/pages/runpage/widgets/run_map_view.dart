@@ -83,6 +83,7 @@ class _RunMapViewState extends State<RunMapView> {
 
   bool _styleReady = false;
   bool _autoFollowSuspended = false;
+  int _accentColorInt = 0xFF6B5FFF;
   Timer? _resumeFollowTimer;
 
   @override
@@ -134,12 +135,14 @@ class _RunMapViewState extends State<RunMapView> {
   Future<void> _onMapCreated(MapboxMap mapboxMap) async {
     _mapboxMap = mapboxMap;
 
-    // Show user location dot (driven by OS GPS)
+    // Show user location dot (driven by OS GPS).
+    // pulsingColor is an ARGB int, not a Color object.
+    final accentInt = Theme.of(context).colorScheme.primary.toARGB32();
     await mapboxMap.location.updateSettings(
       LocationComponentSettings(
         enabled: true,
         pulsingEnabled: true,
-        pulsingColor: 0xFF6B5FFF,
+        pulsingColor: accentInt,
       ),
     );
 
@@ -262,7 +265,7 @@ class _RunMapViewState extends State<RunMapView> {
         final ann = await mgr.create(
           PolylineAnnotationOptions(
             geometry: LineString(coordinates: coords),
-            lineColor: 0xFF6B5FFF,
+            lineColor: _accentColorInt,
             lineWidth: 5.0,
           ),
         );
@@ -290,8 +293,10 @@ class _RunMapViewState extends State<RunMapView> {
   @override
   Widget build(BuildContext context) {
     if (widget.isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF6B5FFF)),
+      return Center(
+        child: CircularProgressIndicator(
+          color: Theme.of(context).colorScheme.primary,
+        ),
       );
     }
 
@@ -320,6 +325,8 @@ class _RunMapViewState extends State<RunMapView> {
 
     final initial = widget.currentPosition!;
     final isLocked = widget.cameraMode == CameraMode.locked;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    _accentColorInt = Theme.of(context).colorScheme.primary.toARGB32();
 
     return MapWidget(
       cameraOptions: CameraOptions(
@@ -327,7 +334,7 @@ class _RunMapViewState extends State<RunMapView> {
         zoom: isLocked ? RunMapView.recordingZoom : RunMapView.idleZoom,
         pitch: isLocked ? RunMapView.recordingPitch : 0.0,
       ),
-      styleUri: MapboxStyles.STANDARD,
+      styleUri: isDark ? MapboxStyles.DARK : MapboxStyles.STANDARD,
       onMapCreated: _onMapCreated,
       onCameraChangeListener: _onCameraChange,
       onScrollListener: (_) => _onUserGesture(),

@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:provider/provider.dart';
+import 'package:trackon_mobile/data/providers/theme_provider.dart';
 
 enum StatsItemType {
   steps(Icons.directions_walk, 'Steps'),
@@ -447,12 +449,6 @@ class StatsItem extends StatelessWidget {
   final VoidCallback? onRefresh;
   final bool isSyncing;
 
-  static const _gradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFF6B5FFF), Color(0xFF8B7FFF)],
-  );
-
   const StatsItem({
     super.key,
     required this.data,
@@ -464,30 +460,47 @@ class StatsItem extends StatelessWidget {
     this.isSyncing = false,
   });
 
+  /// Build gradient from the current theme accent so switching accent
+  /// in settings recolors the stats cards immediately.
+  static LinearGradient _gradientFrom(Color primary) {
+    final hsl = HSLColor.fromColor(primary);
+    final lighter = hsl.withLightness((hsl.lightness + 0.12).clamp(0.0, 1.0)).toColor();
+    return LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [primary, lighter],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Use the RAW accent from ThemeProvider, not scheme.primary.
+    // ColorScheme.fromSeed lightens the primary to tone 80 in dark
+    // mode, which washes out gradients. The raw accent is the exact
+    // color the user picked in settings — same as the preview card.
+    final accent = context.watch<ThemeProvider>().accent;
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        gradient: _gradient,
+        gradient: _gradientFrom(accent),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF6B5FFF).withAlpha(40),
+            color: accent.withAlpha(40),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
         ],
       ),
       child: isExpanded
-          ? _buildExpandedView(context)
+          ? _buildExpandedView(context, accent)
           : _buildCollapsedView(context),
     );
   }
 
   // ─── EXPANDED: gradient bg + white bar chart ───
 
-  Widget _buildExpandedView(BuildContext context) {
+  Widget _buildExpandedView(BuildContext context, Color accent) {
     final maxY = weeklyData.isEmpty
         ? 1.0
         : weeklyData.reduce((a, b) => a > b ? a : b);
@@ -641,8 +654,8 @@ class StatsItem extends StatelessWidget {
                     getTooltipItem: (group, groupIndex, rod, rodIndex) {
                       return BarTooltipItem(
                         rod.toY.toInt().toString(),
-                        const TextStyle(
-                          color: Color(0xFF6B5FFF),
+                        TextStyle(
+                          color: accent,
                           fontWeight: FontWeight.w700,
                           fontSize: 13,
                         ),

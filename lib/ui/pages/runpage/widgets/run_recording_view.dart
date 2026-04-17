@@ -85,7 +85,7 @@ class RunRecordingView extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: const Icon(Icons.my_location, color: Color(0xFF6B5FFF), size: 22),
+                    child: Icon(Icons.my_location, color: Theme.of(context).colorScheme.primary, size: 22),
                   ),
                 ),
               ),
@@ -125,7 +125,7 @@ class RunRecordingView extends StatelessWidget {
           child: Container(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
           decoration: BoxDecoration(
-            color: const Color(0xFF1C2A3A),
+            color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1C1C1E) : const Color(0xFF1C2A3A),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withAlpha(50),

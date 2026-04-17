@@ -44,7 +44,7 @@ class ActivityTypeSelector extends StatelessWidget {
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFF6B5FFF) : Colors.transparent,
+                  color: isSelected ? Theme.of(context).colorScheme.primary : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(

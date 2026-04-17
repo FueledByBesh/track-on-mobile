@@ -11,6 +11,7 @@ import 'data/providers/groups_provider.dart';
 import 'data/providers/logger_provider.dart';
 import 'data/providers/notification_provider.dart';
 import 'data/providers/permission_provider.dart';
+import 'data/providers/theme_provider.dart';
 import 'data/services/logger_service.dart';
 import 'data/services/permission_service.dart';
 import 'data/services/step_service.dart';
@@ -38,6 +39,11 @@ Future<void> main() async {
   // Warm the in-app logger so the first real call doesn't race the DB open.
   Logger.i('APP', 'App launched');
 
+  // Load theme preferences before runApp so the first frame has the
+  // right mode + accent (no flash of wrong colors).
+  final themeProvider = ThemeProvider();
+  await themeProvider.load();
+
   // Initialize MapBox with the public access token
   final mapboxToken = dotenv.env['MAPBOX_PUBLIC_TOKEN'] ?? '';
   MapboxOptions.setAccessToken(mapboxToken);
@@ -52,6 +58,7 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
+        ChangeNotifierProvider.value(value: themeProvider),
         ChangeNotifierProvider.value(value: connectivityProvider),
         ChangeNotifierProvider(
           create: (_) {

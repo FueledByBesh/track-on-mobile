@@ -50,9 +50,9 @@ class _GroupsPageState extends State<GroupsPage>
           ),
           TabBar(
             controller: _tabController,
-            labelColor: const Color(0xFF6B5FFF),
+            labelColor: Theme.of(context).colorScheme.primary,
             unselectedLabelColor: Colors.grey,
-            indicatorColor: const Color(0xFF6B5FFF),
+            indicatorColor: Theme.of(context).colorScheme.primary,
             tabs: const [
               Tab(text: 'Feed'),
               Tab(text: 'Clubs'),
@@ -117,6 +117,8 @@ class _PostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
     final initials = post.authorName.isNotEmpty
         ? post.authorName.split(' ').map((e) => e.isNotEmpty ? e[0] : '').take(2).join()
         : '?';
@@ -125,9 +127,9 @@ class _PostCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -136,8 +138,8 @@ class _PostCard extends StatelessWidget {
             children: [
               Container(
                 width: 40, height: 40,
-                decoration: BoxDecoration(color: const Color(0xFF6B5FFF).withAlpha(100), shape: BoxShape.circle),
-                child: Center(child: Text(initials, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14))),
+                decoration: BoxDecoration(color: scheme.primary.withAlpha(100), shape: BoxShape.circle),
+                child: Center(child: Text(initials, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: scheme.onSurface))),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -146,7 +148,7 @@ class _PostCard extends StatelessWidget {
                   children: [
                     Text(post.authorName, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
                     if (post.clubName != null)
-                      Text(post.clubName!, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF6B5FFF))),
+                      Text(post.clubName!, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.primary)),
                   ],
                 ),
               ),
@@ -163,7 +165,7 @@ class _PostCard extends StatelessWidget {
                   Icon(
                     post.userLiked == true ? Icons.favorite : Icons.favorite_outline,
                     size: 20,
-                    color: post.userLiked == true ? Colors.red : Colors.grey.shade600,
+                    color: post.userLiked == true ? Colors.red : scheme.onSurfaceVariant,
                   ),
                   const SizedBox(width: 4),
                   Text('${post.likes}', style: Theme.of(context).textTheme.bodySmall),
@@ -176,7 +178,7 @@ class _PostCard extends StatelessWidget {
                   Icon(
                     post.userLiked == false ? Icons.thumb_down : Icons.thumb_down_outlined,
                     size: 20,
-                    color: post.userLiked == false ? Colors.blue : Colors.grey.shade600,
+                    color: post.userLiked == false ? Colors.blue : scheme.onSurfaceVariant,
                   ),
                   const SizedBox(width: 4),
                   Text('${post.dislikes}', style: Theme.of(context).textTheme.bodySmall),
@@ -184,7 +186,7 @@ class _PostCard extends StatelessWidget {
               ),
               const SizedBox(width: 24),
               Row(children: [
-                Icon(Icons.mode_comment_outlined, size: 20, color: Colors.grey.shade600),
+                Icon(Icons.mode_comment_outlined, size: 20, color: scheme.onSurfaceVariant),
                 const SizedBox(width: 4),
                 Text('${post.commentCount}', style: Theme.of(context).textTheme.bodySmall),
               ]),
@@ -242,16 +244,18 @@ class _ClubsTabState extends State<ClubsTab> {
                   itemCount: clubs.length,
                   itemBuilder: (context, index) {
                     final club = clubs[index];
+                    final scheme = Theme.of(context).colorScheme;
+                    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
+                      decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(12), border: Border.all(color: scheme.outlineVariant)),
                       child: Row(
                         children: [
                           Container(
                             width: 50, height: 50,
-                            decoration: BoxDecoration(color: const Color(0xFF6B5FFF).withAlpha(30), borderRadius: BorderRadius.circular(8)),
-                            child: const Center(child: Icon(Icons.groups, color: Color(0xFF6B5FFF))),
+                            decoration: BoxDecoration(color: scheme.primary.withAlpha(30), borderRadius: BorderRadius.circular(8)),
+                            child: Center(child: Icon(Icons.groups, color: scheme.primary)),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -259,14 +263,14 @@ class _ClubsTabState extends State<ClubsTab> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(club.name, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-                                Text('${club.memberCount} members', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey)),
+                                Text('${club.memberCount} members', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
                               ],
                             ),
                           ),
                           if (!club.isMember)
                             ElevatedButton(
                               onPressed: () => provider.joinClub(club.id),
-                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6B5FFF), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                              style: ElevatedButton.styleFrom(backgroundColor: scheme.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                               child: const Text('Join', style: TextStyle(color: Colors.white)),
                             )
                           else
@@ -335,7 +339,7 @@ class _FriendsTabState extends State<FriendsTab> {
                 ...provider.incomingRequests.map((req) => Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(12)),
+                  decoration: BoxDecoration(color: Colors.orange.withAlpha(20), borderRadius: BorderRadius.circular(12)),
                   child: Row(
                     children: [
                       Expanded(child: Text(req.friendName.isNotEmpty ? req.friendName : req.friendEmail)),
@@ -360,6 +364,8 @@ class _FriendsTabState extends State<FriendsTab> {
   Widget _buildSearchResults(GroupsProvider provider) {
     final results = provider.searchedUsers;
     if (results.isEmpty) return const Center(child: Text('No users found', style: TextStyle(color: Colors.grey)));
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: results.length,
@@ -368,22 +374,22 @@ class _FriendsTabState extends State<FriendsTab> {
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
+          decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(12), border: Border.all(color: scheme.outlineVariant)),
           child: Row(
             children: [
-              CircleAvatar(backgroundColor: const Color(0xFF6B5FFF).withAlpha(30),
-                child: Text(user.fullName.isNotEmpty ? user.fullName[0] : '?', style: const TextStyle(color: Color(0xFF6B5FFF)))),
+              CircleAvatar(backgroundColor: scheme.primary.withAlpha(30),
+                child: Text(user.fullName.isNotEmpty ? user.fullName[0] : '?', style: TextStyle(color: scheme.primary))),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(user.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                Text(user.email, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                Text(user.fullName, style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onSurface)),
+                Text(user.email, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
               ])),
               ElevatedButton(
                 onPressed: () {
                   provider.sendFriendRequest(user.email);
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Request sent to ${user.fullName}')));
                 },
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6B5FFF), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                style: ElevatedButton.styleFrom(backgroundColor: scheme.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                 child: const Text('Add', style: TextStyle(color: Colors.white)),
               ),
             ],
@@ -406,6 +412,8 @@ class _FriendsTabState extends State<FriendsTab> {
         ]),
       );
     }
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: friends.length,
@@ -414,17 +422,17 @@ class _FriendsTabState extends State<FriendsTab> {
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
+          decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(12), border: Border.all(color: scheme.outlineVariant)),
           child: Row(
             children: [
-              CircleAvatar(backgroundColor: const Color(0xFF6B5FFF).withAlpha(30),
-                child: Text(friend.friendName.isNotEmpty ? friend.friendName[0] : '?', style: const TextStyle(color: Color(0xFF6B5FFF)))),
+              CircleAvatar(backgroundColor: scheme.primary.withAlpha(30),
+                child: Text(friend.friendName.isNotEmpty ? friend.friendName[0] : '?', style: TextStyle(color: scheme.primary))),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(friend.friendName.isNotEmpty ? friend.friendName : friend.friendEmail, style: const TextStyle(fontWeight: FontWeight.w600)),
-                Text(friend.friendEmail, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                Text(friend.friendName.isNotEmpty ? friend.friendName : friend.friendEmail, style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onSurface)),
+                Text(friend.friendEmail, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
               ])),
-              const Icon(Icons.chevron_right, color: Colors.grey),
+              Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
             ],
           ),
         );

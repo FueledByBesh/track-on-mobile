@@ -10,6 +10,7 @@ import 'package:trackon_mobile/data/services/permission_service.dart';
 import 'package:trackon_mobile/data/models/workout.dart';
 import 'package:trackon_mobile/data/models/daily_steps.dart';
 import 'package:trackon_mobile/ui/pages/logs/logs_page.dart';
+import 'package:trackon_mobile/ui/pages/program/program_detail_page.dart';
 import 'package:trackon_mobile/ui/pages/workout/about_workout_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/notifications_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/workout_thumbnail.dart';
@@ -40,11 +41,15 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBody: false,
-      extendBodyBehindAppBar: true,
-      appBar: const CustomAppBar(),
-      body: const HomePageBody(),
+    return const Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            _HomeHeader(),
+            Expanded(child: HomePageBody()),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -86,6 +91,7 @@ class HomePageBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final stepsProvider = context.watch<StepsProvider>();
     final fitnessProvider = context.watch<FitnessProvider>();
     final permissions = context.watch<PermissionProvider>();
@@ -97,9 +103,18 @@ class HomePageBody extends StatelessWidget {
 
     final todaySteps = stepsProvider.today;
     final dayLabels = _buildDayLabels();
-    final stepsWeekly = _build7DayData(stepsProvider.history, (d) => d.stepCount.toDouble());
-    final activityWeekly = _build7DayData(stepsProvider.history, (d) => d.stepCount * 0.004);
-    final mileageWeekly = _build7DayData(stepsProvider.history, (d) => d.distanceKm);
+    final stepsWeekly = _build7DayData(
+      stepsProvider.history,
+      (d) => d.stepCount.toDouble(),
+    );
+    final activityWeekly = _build7DayData(
+      stepsProvider.history,
+      (d) => d.stepCount * 0.004,
+    );
+    final mileageWeekly = _build7DayData(
+      stepsProvider.history,
+      (d) => d.distanceKm,
+    );
 
     final statsData = [
       StatisticsData(
@@ -124,9 +139,9 @@ class HomePageBody extends StatelessWidget {
     ];
 
     return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(
+      padding: const EdgeInsets.fromLTRB(
         horizontalPadding,
-        MediaQuery.of(context).padding.top,
+        10,
         horizontalPadding,
         0,
       ),
@@ -147,7 +162,9 @@ class HomePageBody extends StatelessWidget {
               : StatisticsWidget(
                   data: statsData,
                   onRefresh: () {
-                    final isOnline = context.read<ConnectivityProvider>().isOnline;
+                    final isOnline = context
+                        .read<ConnectivityProvider>()
+                        .isOnline;
                     stepsProvider.forceRefresh(isOnline: isOnline);
                   },
                   isSyncing: stepsProvider.isSyncing,
@@ -157,51 +174,62 @@ class HomePageBody extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
                     'Today\'s Plan',
-                    style: Theme.of(context).textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                  Text(
-                    '${dayItems.length} items',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: Colors.grey),
-                  ),
+                  const SizedBox(width: 8),
+                  if (dayItems.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: scheme.primary.withAlpha(30),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${dayItems.length}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: scheme.primary,
+                        ),
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 12),
               if (dayItems.isEmpty)
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.symmetric(vertical: 32),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200),
+                    color: scheme.surfaceContainerHighest.withAlpha(120),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Column(
                     children: [
-                      Icon(Icons.event_available, size: 40, color: Colors.grey.shade300),
+                      Icon(Icons.event_available, size: 40, color: scheme.onSurfaceVariant.withAlpha(100)),
                       const SizedBox(height: 8),
                       Text(
                         'No workouts planned for today',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
+                        style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
                       ),
                     ],
                   ),
                 )
               else
-                ...dayItems.map((item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: switch (item) {
-                    DayWorkout dw => _WorkoutCard(dayWorkout: dw),
-                    DayProgram dp => _HomeProgramCard(dayProgram: dp),
-                  },
-                )),
+                ...dayItems.map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: switch (item) {
+                      DayWorkout dw => _WorkoutCard(dayWorkout: dw),
+                      DayProgram dp => _HomeProgramCard(dayProgram: dp),
+                    },
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 20),
@@ -211,84 +239,91 @@ class HomePageBody extends StatelessWidget {
   }
 }
 
-class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
-  const CustomAppBar({super.key});
-  static const double appBarHeight = 60;
+/// Inline header row at the top of the home page scroll view.
+/// Theme-aware: avatar accent, icon colors, and greeting text all
+/// derive from Theme.of(context).colorScheme.
+class _HomeHeader extends StatelessWidget {
+  const _HomeHeader();
+  static const double horizontalPadding = HomePageBody.horizontalPadding;
 
-  @override
-  Size get preferredSize => const Size.fromHeight(appBarHeight);
+  String get _greeting {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            color: Colors.white.withAlpha(100),
-            padding: const EdgeInsets.only(top: 8, left: 12, right: 12, bottom: 8),
-            child: Row(
-              children: [
-                GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ProfilePage()),
-                    );
-                  },
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: const Color(0xFF6B5FFF).withAlpha(80),
-                    ),
-                    child: const Icon(
-                      Icons.person,
-                      size: 22,
-                      color: Color(0xFF6B5FFF),
-                    ),
-                  ),
+    final scheme = Theme.of(context).colorScheme;
+    final iconColor = scheme.onSurfaceVariant;
+
+    return Padding(
+      padding: const EdgeInsets.only(
+        top: 4,
+        bottom: 4,
+        left: horizontalPadding,
+        right: horizontalPadding,
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ProfilePage()),
+            ),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: scheme.primary.withAlpha(40),
+                border: Border.all(
+                  color: scheme.primary.withAlpha(80),
+                  width: 1.5,
                 ),
-                const Spacer(),
-                IconButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const NotificationsPage(),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.notifications_outlined),
-                  color: Colors.grey.shade700,
-                ),
-                // Dev-only in-app logs — remove before release
-                IconButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const LogsPage()),
-                    );
-                  },
-                  icon: const Icon(Icons.bug_report_outlined),
-                  color: Colors.grey.shade700,
-                  tooltip: 'Logs (dev)',
-                ),
-                IconButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const SettingsPage()),
-                    );
-                  },
-                  icon: const Icon(Icons.settings_outlined),
-                  color: Colors.grey.shade700,
-                ),
-              ],
+              ),
+              child: Icon(Icons.person, size: 22, color: scheme.primary),
             ),
           ),
-        ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _greeting,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurface,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const NotificationsPage()),
+            ),
+            icon: const Icon(Icons.notifications_outlined),
+            color: iconColor,
+          ),
+          // Dev-only in-app logs — remove before release
+          IconButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const LogsPage()),
+            ),
+            icon: const Icon(Icons.bug_report_outlined),
+            color: iconColor,
+            tooltip: 'Logs (dev)',
+          ),
+          IconButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SettingsPage()),
+            ),
+            icon: const Icon(Icons.settings_outlined),
+            color: iconColor,
+          ),
+        ],
       ),
     );
   }
@@ -302,6 +337,9 @@ class _WorkoutCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dw = dayWorkout;
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+
     return GestureDetector(
       onTap: () {
         final pw = PlannedWorkout(
@@ -321,16 +359,35 @@ class _WorkoutCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
+          color: dw.completed
+              ? Colors.green.withAlpha(15)
+              : cardColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: dw.completed
+                ? Colors.green.withAlpha(80)
+                : scheme.outlineVariant.withAlpha(80),
+          ),
         ),
         child: Row(
           children: [
-            WorkoutThumbnail(
-              videoUrl: dw.tutorialVideoUrl,
-              size: WorkoutThumbnailSize.small,
-            ),
+            // Thumbnail or completed check
+            dw.completed
+                ? Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: Colors.green.withAlpha(30),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Center(
+                      child: Icon(Icons.check_circle, color: Colors.green, size: 24),
+                    ),
+                  )
+                : WorkoutThumbnail(
+                    videoUrl: dw.tutorialVideoUrl,
+                    size: WorkoutThumbnailSize.small,
+                  ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -338,42 +395,48 @@ class _WorkoutCard extends StatelessWidget {
                 children: [
                   Text(
                     dw.workoutName,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w600),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      decoration: dw.completed ? TextDecoration.lineThrough : null,
+                      color: dw.completed
+                          ? scheme.onSurfaceVariant
+                          : scheme.onSurface,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  Text(
-                    '${dw.sets} sets x ${dw.reps} reps',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: Colors.grey),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Text(
+                        '${dw.sets} × ${dw.reps}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: scheme.primary.withAlpha(20),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          dw.category.label,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.primary,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
-            if (dw.completed)
-              Container(
-                width: 24,
-                height: 24,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF6B5FFF),
-                  shape: BoxShape.circle,
-                ),
-                child: const Center(
-                  child: Icon(Icons.check, color: Colors.white, size: 16),
-                ),
-              )
-            else
-              Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  shape: BoxShape.circle,
-                ),
-              ),
+            Icon(Icons.chevron_right, color: scheme.onSurfaceVariant.withAlpha(120), size: 20),
           ],
         ),
       ),
@@ -388,73 +451,107 @@ class _HomeProgramCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dp = dayProgram;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: dp.completed
-              ? Colors.green.shade200
-              : const Color(0xFF6B5FFF).withAlpha(60),
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return GestureDetector(
+      onTap: () {
+        final provider = context.read<FitnessProvider>();
+        final program = provider.programs.firstWhere(
+          (p) => p.id == dp.programId,
+          orElse: () => WorkoutProgram(
+              id: dp.programId, name: dp.programName, items: []),
+        );
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ProgramDetailPage(
+              program: program,
+              plannedProgramId: dp.id,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: dp.completed
+                ? [Colors.green.withAlpha(isDark ? 30 : 15), Colors.green.withAlpha(isDark ? 50 : 25)]
+                : [scheme.primary.withAlpha(isDark ? 30 : 15), scheme.primary.withAlpha(isDark ? 50 : 25)],
+          ),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: dp.completed
+                ? Colors.green.withAlpha(80)
+                : scheme.primary.withAlpha(60),
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: dp.completed
-                  ? Colors.green.withAlpha(40)
-                  : const Color(0xFF6B5FFF).withAlpha(30),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: Icon(
-                dp.completed ? Icons.check_circle : Icons.list_alt,
-                color: dp.completed ? Colors.green : const Color(0xFF6B5FFF),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: dp.completed
+                    ? Colors.green.withAlpha(40)
+                    : scheme.primary.withAlpha(30),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Icon(
+                  dp.completed ? Icons.check_circle : Icons.list_alt_rounded,
+                  color: dp.completed ? Colors.green : scheme.primary,
+                  size: 24,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  dp.programName,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-                Text(
-                  '${dp.workoutCount} exercises',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFF6B5FFF).withAlpha(20),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const Text(
-              'PROGRAM',
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF6B5FFF),
-                letterSpacing: 0.5,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    dp.programName,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      decoration: dp.completed ? TextDecoration.lineThrough : null,
+                      color: dp.completed
+                          ? scheme.onSurfaceVariant
+                          : scheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${dp.workoutCount} exercises',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-        ],
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: scheme.primary.withAlpha(20),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'PROGRAM',
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  color: scheme.primary,
+                  letterSpacing: 0.8,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -519,10 +616,7 @@ class _FitnessPermissionBanner extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.orange.shade800,
-                  ),
+                  style: TextStyle(fontSize: 11, color: Colors.orange.shade800),
                 ),
               ],
             ),
@@ -532,7 +626,10 @@ class _FitnessPermissionBanner extends StatelessWidget {
               onPressed: isPermanent ? onOpenSettings : onAllow,
               style: TextButton.styleFrom(
                 foregroundColor: Colors.orange.shade900,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
                 visualDensity: VisualDensity.compact,
               ),
               child: Text(isPermanent ? 'Settings' : 'Allow'),

@@ -53,9 +53,9 @@ class _FitnessPageState extends State<FitnessPage>
           ),
           TabBar(
             controller: _tabController,
-            labelColor: const Color(0xFF6B5FFF),
+            labelColor: Theme.of(context).colorScheme.primary,
             unselectedLabelColor: Colors.grey,
-            indicatorColor: const Color(0xFF6B5FFF),
+            indicatorColor: Theme.of(context).colorScheme.primary,
             tabs: const [
               Tab(text: 'My Day'),
               Tab(text: 'My Programs'),
@@ -152,7 +152,7 @@ class MyDayTab extends StatelessWidget {
                                 icon: const Icon(Icons.play_arrow, color: Colors.white),
                                 label: const Text('Start Training', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF6B5FFF),
+                                  backgroundColor: Theme.of(context).colorScheme.primary,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
                               ),
@@ -194,16 +194,18 @@ class _WeekCalendar extends StatelessWidget {
           final day = days[index];
           final isSelected = DateUtils.isSameDay(day, selectedDate);
           final isToday = DateUtils.isSameDay(day, now);
+          final scheme = Theme.of(context).colorScheme;
+          final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
           return GestureDetector(
             onTap: () => onDateSelected(day),
             child: Container(
               width: 48,
               margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
               decoration: BoxDecoration(
-                color: isSelected ? const Color(0xFF6B5FFF) : Colors.white,
+                color: isSelected ? scheme.primary : cardColor,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isToday && !isSelected ? const Color(0xFF6B5FFF) : Colors.grey.shade200,
+                  color: isToday && !isSelected ? scheme.primary : scheme.outlineVariant,
                 ),
               ),
               child: Column(
@@ -216,7 +218,7 @@ class _WeekCalendar extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     '${day.day}',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: isSelected ? Colors.white : Colors.black87),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: isSelected ? Colors.white : scheme.onSurface),
                   ),
                 ],
               ),
@@ -266,67 +268,71 @@ class _PlannedWorkoutCard extends StatelessWidget {
           );
           openAboutWorkoutFromPlanned(context, pw);
         },
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Row(
-            children: [
-              GestureDetector(
-                onTap: () => context
-                    .read<FitnessProvider>()
-                    .toggleWorkoutCompleted(dw.id, !dw.completed),
-                child: dw.completed
-                    ? Container(
-                        width: 50,
-                        height: 50,
-                        decoration: BoxDecoration(
-                          color: Colors.green.withAlpha(40),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Center(
-                          child:
-                              Icon(Icons.check_circle, color: Colors.green),
-                        ),
-                      )
-                    : WorkoutThumbnail(
-                        videoUrl: dw.tutorialVideoUrl,
-                        size: WorkoutThumbnailSize.small,
-                      ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      dw.workoutName,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            decoration: dw.completed
-                                ? TextDecoration.lineThrough
-                                : null,
+        child: Builder(builder: (context) {
+          final scheme = Theme.of(context).colorScheme;
+          final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: () => context
+                      .read<FitnessProvider>()
+                      .toggleWorkoutCompleted(dw.id, !dw.completed),
+                  child: dw.completed
+                      ? Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: Colors.green.withAlpha(40),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${dw.sets} sets x ${dw.reps} reps',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Colors.grey),
-                    ),
-                  ],
+                          child: const Center(
+                            child:
+                                Icon(Icons.check_circle, color: Colors.green),
+                          ),
+                        )
+                      : WorkoutThumbnail(
+                          videoUrl: dw.tutorialVideoUrl,
+                          size: WorkoutThumbnailSize.small,
+                        ),
                 ),
-              ),
-              const Icon(Icons.chevron_right, color: Colors.grey),
-            ],
-          ),
-        ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        dw.workoutName,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              decoration: dw.completed
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                            ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${dw.sets} sets x ${dw.reps} reps',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+              ],
+            ),
+          );
+        }),
       ),
     );
   }
@@ -373,84 +379,88 @@ class _PlannedProgramCard extends StatelessWidget {
                 )),
           );
         },
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: dp.completed ? Colors.grey.shade50 : Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: dp.completed
-                  ? Colors.green.shade200
-                  : const Color(0xFF6B5FFF).withAlpha(60),
-              width: 1.5,
+        child: Builder(builder: (context) {
+          final scheme = Theme.of(context).colorScheme;
+          final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: dp.completed ? scheme.surfaceContainerHighest : cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: dp.completed
+                    ? Colors.green.shade200
+                    : scheme.primary.withAlpha(60),
+                width: 1.5,
+              ),
             ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: dp.completed
-                      ? Colors.green.withAlpha(40)
-                      : const Color(0xFF6B5FFF).withAlpha(30),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Center(
-                  child: Icon(
-                    dp.completed ? Icons.check_circle : Icons.list_alt,
+            child: Row(
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
                     color: dp.completed
-                        ? Colors.green
-                        : const Color(0xFF6B5FFF),
+                        ? Colors.green.withAlpha(40)
+                        : scheme.primary.withAlpha(30),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      dp.completed ? Icons.check_circle : Icons.list_alt,
+                      color: dp.completed
+                          ? Colors.green
+                          : scheme.primary,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      dp.programName,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            decoration: dp.completed
-                                ? TextDecoration.lineThrough
-                                : null,
-                          ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${dp.workoutCount} exercises',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6B5FFF).withAlpha(20),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  'PROGRAM',
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF6B5FFF),
-                    letterSpacing: 0.5,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        dp.programName,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              decoration: dp.completed
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                            ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${dp.workoutCount} exercises',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ],
-          ),
-        ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withAlpha(20),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'PROGRAM',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.primary,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
       ),
     );
   }
@@ -469,7 +479,7 @@ class MyProgramsTab extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.transparent,
       floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFF6B5FFF),
+        backgroundColor: Theme.of(context).colorScheme.primary,
         onPressed: () => _showCreateDialog(context),
         child: const Icon(Icons.add, color: Colors.white),
       ),
@@ -498,81 +508,85 @@ class MyProgramsTab extends StatelessWidget {
                         context,
                         MaterialPageRoute(builder: (_) => ProgramDetailPage(program: program)),
                       ),
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade200),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 50,
-                              height: 50,
-                              decoration: BoxDecoration(
-                                color: program.active
-                                    ? const Color(0xFF6B5FFF).withAlpha(30)
-                                    : Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  Icons.list_alt,
+                      child: Builder(builder: (context) {
+                        final scheme = Theme.of(context).colorScheme;
+                        final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: cardColor,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: scheme.outlineVariant),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 50,
+                                height: 50,
+                                decoration: BoxDecoration(
                                   color: program.active
-                                      ? const Color(0xFF6B5FFF)
-                                      : Colors.grey,
+                                      ? scheme.primary.withAlpha(30)
+                                      : scheme.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Icon(
+                                    Icons.list_alt,
+                                    color: program.active
+                                        ? scheme.primary
+                                        : Colors.grey,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    program.name,
-                                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      Text(
-                                        '${program.items.length} exercises',
-                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
-                                      ),
-                                      if (program.schedule.isNotEmpty) ...[
-                                        const SizedBox(width: 8),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      program.name,
+                                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
                                         Text(
-                                          _scheduleLabel(program.schedule),
-                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                                color: const Color(0xFF6B5FFF),
-                                                fontWeight: FontWeight.w500,
-                                              ),
+                                          '${program.items.length} exercises',
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
                                         ),
+                                        if (program.schedule.isNotEmpty) ...[
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            _scheduleLabel(program.schedule),
+                                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                  color: scheme.primary,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                          ),
+                                        ],
+                                        if (!program.active) ...[
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            'Inactive',
+                                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                  color: Colors.orange,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                          ),
+                                        ],
                                       ],
-                                      if (!program.active) ...[
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Inactive',
-                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                                color: Colors.orange,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ],
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const Icon(Icons.chevron_right, color: Colors.grey),
-                          ],
-                        ),
-                      ),
+                              Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+                            ],
+                          ),
+                        );
+                      }),
                     );
                   },
                 ),
@@ -653,7 +667,7 @@ class WorkoutLibraryTab extends StatelessWidget {
         Expanded(
           child: RefreshIndicator(
             onRefresh: () => provider.forceRefreshLibrary(),
-            color: const Color(0xFF6B5FFF),
+            color: Theme.of(context).colorScheme.primary,
             child: workouts.isEmpty
                 ? ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -705,6 +719,8 @@ class _CategoryFilterRow extends StatelessWidget {
           final (label, value) = entries[index];
           final isSelected = (value == null && selected == null) ||
               (value != null && selected?.value == value.value);
+          final scheme = Theme.of(context).colorScheme;
+          final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
           return Padding(
             padding: const EdgeInsets.only(right: 8),
             child: GestureDetector(
@@ -712,11 +728,11 @@ class _CategoryFilterRow extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFF6B5FFF) : Colors.white,
+                  color: isSelected ? scheme.primary : cardColor,
                   border: Border.all(
                     color: isSelected
-                        ? const Color(0xFF6B5FFF)
-                        : Colors.grey.shade300,
+                        ? scheme.primary
+                        : scheme.outlineVariant,
                   ),
                   borderRadius: BorderRadius.circular(20),
                 ),
@@ -725,7 +741,7 @@ class _CategoryFilterRow extends StatelessWidget {
                     label,
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      color: isSelected ? Colors.white : Colors.grey,
+                      color: isSelected ? Colors.white : scheme.onSurfaceVariant,
                       fontSize: 13,
                     ),
                   ),
@@ -761,6 +777,7 @@ class _MuscleFilterRow extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         itemCount: muscles.length + (selected.isEmpty ? 0 : 1),
         itemBuilder: (context, index) {
+          final scheme = Theme.of(context).colorScheme;
           // Trailing "clear" chip when any muscle is selected
           if (selected.isNotEmpty && index == muscles.length) {
             return Padding(
@@ -770,20 +787,20 @@ class _MuscleFilterRow extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
+                    color: scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.close, size: 14, color: Colors.grey),
-                      SizedBox(width: 4),
+                      Icon(Icons.close, size: 14, color: scheme.onSurfaceVariant),
+                      const SizedBox(width: 4),
                       Text(
                         'Clear',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: Colors.grey,
+                          color: scheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -802,11 +819,11 @@ class _MuscleFilterRow extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? const Color(0xFF6B5FFF).withAlpha(30)
-                      : Colors.grey.shade100,
+                      ? scheme.primary.withAlpha(30)
+                      : scheme.surfaceContainerHighest,
                   border: Border.all(
                     color: isSelected
-                        ? const Color(0xFF6B5FFF)
+                        ? scheme.primary
                         : Colors.transparent,
                   ),
                   borderRadius: BorderRadius.circular(16),
@@ -817,8 +834,8 @@ class _MuscleFilterRow extends StatelessWidget {
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: isSelected
-                        ? const Color(0xFF6B5FFF)
-                        : Colors.grey.shade700,
+                        ? scheme.primary
+                        : scheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -849,13 +866,16 @@ class _WorkoutCardLibrary extends StatelessWidget {
           ),
         ),
       ),
-      child: Container(
+      child: Builder(builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+        return Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: cardColor,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
+          border: Border.all(color: scheme.outlineVariant),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -865,22 +885,22 @@ class _WorkoutCardLibrary extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF6B5FFF).withAlpha(30),
+                    color: scheme.primary.withAlpha(30),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     workout.category.label,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF6B5FFF),
+                      color: scheme.primary,
                     ),
                   ),
                 ),
                 const Spacer(),
                 if (workout.tutorialVideoUrl != null)
-                  const Icon(Icons.play_circle_outline,
-                      size: 18, color: Color(0xFF6B5FFF)),
+                  Icon(Icons.play_circle_outline,
+                      size: 18, color: scheme.primary),
               ],
             ),
             const SizedBox(height: 8),
@@ -934,14 +954,14 @@ class _WorkoutCardLibrary extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
+                          color: scheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           '${m.name} ${m.percentage}%',
                           style: TextStyle(
                             fontSize: 10,
-                            color: Colors.grey.shade700,
+                            color: scheme.onSurfaceVariant,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -953,7 +973,7 @@ class _WorkoutCardLibrary extends StatelessWidget {
                         '+${workout.muscles.length - 3} more',
                         style: TextStyle(
                           fontSize: 10,
-                          color: Colors.grey.shade500,
+                          color: scheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -972,7 +992,7 @@ class _WorkoutCardLibrary extends StatelessWidget {
                     );
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6B5FFF),
+                    backgroundColor: scheme.primary,
                     padding: const EdgeInsets.symmetric(horizontal: 18),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -985,7 +1005,8 @@ class _WorkoutCardLibrary extends StatelessWidget {
             ),
           ],
         ),
-      ),
+        );
+      }),
     );
   }
 }
@@ -997,22 +1018,23 @@ class _MetaPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
+        color: scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: Colors.grey.shade700),
+          Icon(icon, size: 12, color: scheme.onSurfaceVariant),
           const SizedBox(width: 4),
           Text(
             label,
             style: TextStyle(
               fontSize: 11,
-              color: Colors.grey.shade700,
+              color: scheme.onSurfaceVariant,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -1111,6 +1133,7 @@ class _TrainingSessionPageState extends State<TrainingSessionPage> {
       return Scaffold(appBar: AppBar(title: const Text('Training')), body: const Center(child: Text('No workouts to do!')));
     }
     final workout = _currentWorkout!;
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(title: Text('${_currentIndex + 1}/${_workouts.length}'), leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context))),
@@ -1119,13 +1142,13 @@ class _TrainingSessionPageState extends State<TrainingSessionPage> {
         child: Column(children: [
           Text(workout.workoutName, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          Text('${workout.sets} sets x ${workout.reps} reps', style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Colors.grey)),
+          Text('${workout.sets} sets x ${workout.reps} reps', style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: scheme.onSurfaceVariant)),
           const Spacer(),
           if (_isResting)
             Column(children: [
-              Text('Rest', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.grey)),
+              Text('Rest', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: scheme.onSurfaceVariant)),
               const SizedBox(height: 8),
-              Text('$_restSeconds', style: Theme.of(context).textTheme.displayLarge?.copyWith(fontWeight: FontWeight.bold, color: const Color(0xFF6B5FFF))),
+              Text('$_restSeconds', style: Theme.of(context).textTheme.displayLarge?.copyWith(fontWeight: FontWeight.bold, color: scheme.primary)),
               const SizedBox(height: 8),
               TextButton(onPressed: () => setState(() { _isResting = false; _currentSet++; }), child: const Text('Skip Rest')),
             ])
@@ -1133,14 +1156,14 @@ class _TrainingSessionPageState extends State<TrainingSessionPage> {
             Column(children: [
               Text('Set $_currentSet of ${workout.sets}', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
-              Text('${workout.reps} reps', style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.bold, color: const Color(0xFF6B5FFF))),
+              Text('${workout.reps} reps', style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.bold, color: scheme.primary)),
             ]),
           const Spacer(),
           if (!_isResting)
             Row(children: [
               Expanded(child: ElevatedButton(
                 onPressed: _finishSet,
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6B5FFF), minimumSize: const Size(0, 56), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                style: ElevatedButton.styleFrom(backgroundColor: scheme.primary, minimumSize: const Size(0, 56), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                 child: Text(_isLastSet ? 'Finish Workout' : 'Finish Set', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
               )),
               if (!_isLastSet) ...[

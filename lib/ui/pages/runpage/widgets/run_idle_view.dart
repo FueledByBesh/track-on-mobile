@@ -101,7 +101,7 @@ class _ActivityTypePopupButton extends StatelessWidget {
         tooltip: 'Activity type',
         position: PopupMenuPosition.over,
         offset: const Offset(0, -160),
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         elevation: 8,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         onSelected: onChanged,
@@ -114,8 +114,8 @@ class _ActivityTypePopupButton extends StatelessWidget {
                 Icon(
                   type.icon,
                   color: isSelected
-                      ? const Color(0xFF6B5FFF)
-                      : Colors.grey.shade700,
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
                   size: 22,
                 ),
                 const SizedBox(width: 12),
@@ -124,8 +124,8 @@ class _ActivityTypePopupButton extends StatelessWidget {
                   style: TextStyle(
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                     color: isSelected
-                        ? const Color(0xFF6B5FFF)
-                        : Colors.black87,
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
               ],
@@ -136,7 +136,7 @@ class _ActivityTypePopupButton extends StatelessWidget {
           width: 56,
           height: 56,
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surface,
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
@@ -146,7 +146,7 @@ class _ActivityTypePopupButton extends StatelessWidget {
               ),
             ],
           ),
-          child: Icon(selected.icon, color: const Color(0xFF6B5FFF), size: 26),
+          child: Icon(selected.icon, color: Theme.of(context).colorScheme.primary, size: 26),
         ),
       ),
     );
@@ -168,11 +168,11 @@ class _StartButton extends StatelessWidget {
       child: Container(
         height: 56,
         decoration: BoxDecoration(
-          color: const Color(0xFF6B5FFF),
+          color: Theme.of(context).colorScheme.primary,
           borderRadius: BorderRadius.circular(28),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF6B5FFF).withAlpha(120),
+              color: Theme.of(context).colorScheme.primary.withAlpha(120),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
@@ -214,7 +214,7 @@ class _FloatingIconButton extends StatelessWidget {
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
@@ -224,7 +224,7 @@ class _FloatingIconButton extends StatelessWidget {
             ),
           ],
         ),
-        child: Icon(icon, color: const Color(0xFF6B5FFF), size: 22),
+        child: Icon(icon, color: Theme.of(context).colorScheme.primary, size: 22),
       ),
     );
   }

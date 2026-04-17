@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/providers/auth_provider.dart';
 import 'package:trackon_mobile/data/providers/permission_provider.dart';
+import 'package:trackon_mobile/data/providers/theme_provider.dart';
 import 'package:trackon_mobile/data/services/permission_service.dart';
+import 'package:trackon_mobile/ui/theme/app_theme.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -38,9 +40,9 @@ class _SettingsPageState extends State<SettingsPage>
         title: const Text('Settings'),
         bottom: TabBar(
           controller: _tabController,
-          labelColor: const Color(0xFF6B5FFF),
-          unselectedLabelColor: Colors.grey,
-          indicatorColor: const Color(0xFF6B5FFF),
+          labelColor: Theme.of(context).colorScheme.primary,
+          unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
+          indicatorColor: Theme.of(context).colorScheme.primary,
           isScrollable: true,
           tabAlignment: TabAlignment.start,
           tabs: const [
@@ -149,54 +151,61 @@ class _GeneralTabState extends State<_GeneralTab> {
   }
 }
 
-class _AppearanceTab extends StatefulWidget {
+class _AppearanceTab extends StatelessWidget {
   const _AppearanceTab();
 
   @override
-  State<_AppearanceTab> createState() => _AppearanceTabState();
-}
-
-class _AppearanceTabState extends State<_AppearanceTab> {
-  String _theme = 'System';
-  bool _animations = true;
-  int _selectedAccent = 0;
-
-  final List<Color> _accentColors = [
-    const Color(0xFF6B5FFF),
-    Colors.blue,
-    Colors.teal,
-    Colors.orange,
-    Colors.pink,
-    Colors.green,
-  ];
-
-  @override
   Widget build(BuildContext context) {
+    final themeProvider = context.watch<ThemeProvider>();
+    final currentAccent = themeProvider.accent;
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         _SectionHeader(title: 'Theme'),
-        _SettingsTileDropdown(
-          icon: Icons.brightness_6,
-          title: 'App Theme',
-          value: _theme,
-          options: const ['Light', 'Dark', 'System'],
-          onChanged: (v) => setState(() => _theme = v),
+        const SizedBox(height: 8),
+        // Segmented mode picker
+        Row(
+          children: [
+            _ThemeModeButton(
+              icon: Icons.light_mode,
+              label: 'Light',
+              isSelected: themeProvider.mode == ThemeMode.light,
+              onTap: () => themeProvider.setMode(ThemeMode.light),
+            ),
+            const SizedBox(width: 8),
+            _ThemeModeButton(
+              icon: Icons.dark_mode,
+              label: 'Dark',
+              isSelected: themeProvider.mode == ThemeMode.dark,
+              onTap: () => themeProvider.setMode(ThemeMode.dark),
+            ),
+            const SizedBox(width: 8),
+            _ThemeModeButton(
+              icon: Icons.phone_android,
+              label: 'System',
+              isSelected: themeProvider.mode == ThemeMode.system,
+              onTap: () => themeProvider.setMode(ThemeMode.system),
+            ),
+          ],
         ),
         const SizedBox(height: 24),
         _SectionHeader(title: 'Accent Color'),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         Wrap(
           spacing: 12,
-          children: List.generate(_accentColors.length, (index) {
-            final isSelected = index == _selectedAccent;
+          runSpacing: 12,
+          children: List.generate(AppTheme.accentOptions.length, (index) {
+            final color = AppTheme.accentOptions[index];
+            final isSelected = currentAccent == color;
             return GestureDetector(
-              onTap: () => setState(() => _selectedAccent = index),
-              child: Container(
+              onTap: () => themeProvider.setAccent(color),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: _accentColors[index],
+                  color: color,
                   shape: BoxShape.circle,
                   border: isSelected
                       ? Border.all(color: Colors.white, width: 3)
@@ -204,8 +213,8 @@ class _AppearanceTabState extends State<_AppearanceTab> {
                   boxShadow: isSelected
                       ? [
                           BoxShadow(
-                            color: _accentColors[index].withAlpha(150),
-                            blurRadius: 8,
+                            color: color.withAlpha(150),
+                            blurRadius: 10,
                             spreadRadius: 2,
                           ),
                         ]
@@ -218,16 +227,205 @@ class _AppearanceTabState extends State<_AppearanceTab> {
             );
           }),
         ),
-        const SizedBox(height: 24),
-        _SectionHeader(title: 'Other'),
-        _SettingsTileSwitch(
-          icon: Icons.animation,
-          title: 'Animations',
-          subtitle: 'Enable UI animations',
-          value: _animations,
-          onChanged: (v) => setState(() => _animations = v),
+        const SizedBox(height: 8),
+        Text(
+          AppTheme.accentLabels[AppTheme.accentOptions.indexOf(currentAccent)
+              .clamp(0, AppTheme.accentLabels.length - 1)],
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
+        const SizedBox(height: 24),
+        _SectionHeader(title: 'Preview'),
+        const SizedBox(height: 12),
+        _AccentPreviewCard(accent: currentAccent),
       ],
+    );
+  }
+}
+
+/// Live preview card that recolors instantly when the user picks a new
+/// accent. Mimics the look of the statistics hero gradient so the user
+/// sees exactly how the home page will feel.
+class _AccentPreviewCard extends StatelessWidget {
+  final Color accent;
+  const _AccentPreviewCard({required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    // Derive a lighter shade for the gradient end
+    final hsl = HSLColor.fromColor(accent);
+    final lighter = hsl.withLightness((hsl.lightness + 0.12).clamp(0.0, 1.0)).toColor();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [accent, lighter],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withAlpha(50),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withAlpha(30),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.directions_walk,
+                    color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '6,421',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    'steps today',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white.withAlpha(180),
+                    ),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              // Mini bar chart preview
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (final h in [0.3, 0.5, 0.7, 0.4, 0.9, 0.6, 0.8])
+                    Padding(
+                      padding: const EdgeInsets.only(left: 3),
+                      child: Container(
+                        width: 6,
+                        height: 36 * h,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withAlpha(180),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _PreviewPill(label: '4.9 km'),
+              const SizedBox(width: 8),
+              _PreviewPill(label: '256 cal'),
+              const SizedBox(width: 8),
+              _PreviewPill(label: '32 min'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PreviewPill extends StatelessWidget {
+  final String label;
+  const _PreviewPill({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(25),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: Colors.white.withAlpha(220),
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeModeButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ThemeModeButton({
+    required this.icon,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? scheme.primary.withAlpha(30)
+                : scheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? scheme.primary : Colors.transparent,
+              width: 1.5,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(
+                icon,
+                color: isSelected ? scheme.primary : scheme.onSurfaceVariant,
+                size: 22,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -293,20 +491,23 @@ class _PermissionTile extends StatelessWidget {
     final (statusLabel, statusColor) = _statusStyle(status);
     final busy = provider.isBusy;
 
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: scheme.outlineVariant.withAlpha(80)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, color: const Color(0xFF6B5FFF)),
+              Icon(icon, color: scheme.primary),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -314,9 +515,10 @@ class _PermissionTile extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
+                        color: scheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -324,7 +526,7 @@ class _PermissionTile extends StatelessWidget {
                       subtitle,
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey.shade600,
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -488,7 +690,7 @@ class _SectionHeader extends StatelessWidget {
         title,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
           fontWeight: FontWeight.w600,
-          color: Colors.grey.shade600,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ),
     );
@@ -512,28 +714,31 @@ class _SettingsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isDestructive ? Colors.red : const Color(0xFF6B5FFF);
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+    final accentColor = isDestructive ? scheme.error : scheme.primary;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: scheme.outlineVariant.withAlpha(80)),
       ),
       child: ListTile(
-        leading: Icon(icon, color: color),
+        leading: Icon(icon, color: accentColor),
         title: Text(
           title,
           style: TextStyle(
             fontWeight: FontWeight.w500,
-            color: isDestructive ? Colors.red : null,
+            color: isDestructive ? scheme.error : scheme.onSurface,
           ),
         ),
         subtitle: Text(
           subtitle,
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
         ),
-        trailing: Icon(Icons.chevron_right, color: Colors.grey.shade400),
+        trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant.withAlpha(120)),
         onTap: onTap,
       ),
     );
@@ -557,24 +762,30 @@ class _SettingsTileSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: scheme.outlineVariant.withAlpha(80)),
       ),
       child: ListTile(
-        leading: Icon(icon, color: const Color(0xFF6B5FFF)),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
+        leading: Icon(icon, color: scheme.primary),
+        title: Text(
+          title,
+          style: TextStyle(fontWeight: FontWeight.w500, color: scheme.onSurface),
+        ),
         subtitle: Text(
           subtitle,
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
         ),
         trailing: Switch(
           value: value,
           onChanged: onChanged,
-          activeThumbColor: const Color(0xFF6B5FFF),
+          activeTrackColor: scheme.primary,
         ),
       ),
     );
@@ -598,21 +809,31 @@ class _SettingsTileDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: scheme.outlineVariant.withAlpha(80)),
       ),
       child: ListTile(
-        leading: Icon(icon, color: const Color(0xFF6B5FFF)),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
+        leading: Icon(icon, color: scheme.primary),
+        title: Text(
+          title,
+          style: TextStyle(fontWeight: FontWeight.w500, color: scheme.onSurface),
+        ),
         trailing: DropdownButton<String>(
           value: value,
           underline: const SizedBox(),
+          dropdownColor: cardColor,
           items: options
-              .map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 14))))
+              .map((o) => DropdownMenuItem(
+                    value: o,
+                    child: Text(o, style: TextStyle(fontSize: 14, color: scheme.onSurface)),
+                  ))
               .toList(),
           onChanged: (v) {
             if (v != null) onChanged(v);
