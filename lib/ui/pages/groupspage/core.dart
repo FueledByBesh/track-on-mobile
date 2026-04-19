@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/providers/groups_provider.dart';
+import 'package:trackon_mobile/data/models/club.dart';
 import 'package:trackon_mobile/data/models/post.dart' as post_model;
+import 'package:trackon_mobile/ui/pages/clubs/club_detail_page.dart';
+import 'package:trackon_mobile/ui/pages/clubs/mock_clubs.dart';
 
 class GroupsPage extends StatefulWidget {
   const GroupsPage({super.key});
@@ -214,7 +217,13 @@ class _ClubsTabState extends State<ClubsTab> {
   Widget build(BuildContext context) {
     final provider = context.watch<GroupsProvider>();
     final isSearching = _searchController.text.isNotEmpty;
-    final clubs = isSearching ? provider.searchedClubs : provider.myClubs;
+    final scheme = Theme.of(context).colorScheme;
+
+    // Mock-sourced groupings while the backend isn't wired up.
+    final owned = MockClubData.ownedClubs;
+    final admin = MockClubData.adminClubs;
+    final member = MockClubData.memberClubs;
+    final recommended = MockClubData.recommendedClubs;
 
     return Column(
       children: [
@@ -223,65 +232,95 @@ class _ClubsTabState extends State<ClubsTab> {
           child: TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Search clubs...',
+              hintText: 'Search by name or @handle',
               prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: scheme.outlineVariant),
+              ),
               contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
             ),
             onChanged: (query) {
-              if (query.isNotEmpty) {
-                provider.searchClubs(query);
-              }
+              if (query.isNotEmpty) provider.searchClubs(query);
               setState(() {});
             },
           ),
         ),
         Expanded(
-          child: clubs.isEmpty
-              ? Center(child: Text(isSearching ? 'No clubs found' : 'No clubs yet', style: TextStyle(color: Colors.grey.shade500)))
-              : ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: clubs.length,
-                  itemBuilder: (context, index) {
-                    final club = clubs[index];
-                    final scheme = Theme.of(context).colorScheme;
-                    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(12), border: Border.all(color: scheme.outlineVariant)),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 50, height: 50,
-                            decoration: BoxDecoration(color: scheme.primary.withAlpha(30), borderRadius: BorderRadius.circular(8)),
-                            child: Center(child: Icon(Icons.groups, color: scheme.primary)),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(club.name, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-                                Text('${club.memberCount} members', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
-                              ],
-                            ),
-                          ),
-                          if (!club.isMember)
-                            ElevatedButton(
-                              onPressed: () => provider.joinClub(club.id),
-                              style: ElevatedButton.styleFrom(backgroundColor: scheme.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                              child: const Text('Join', style: TextStyle(color: Colors.white)),
-                            )
-                          else
-                            const Icon(Icons.check_circle, color: Colors.green),
-                        ],
+          child: isSearching
+              ? _buildSearchResults(provider, scheme)
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  children: [
+                    if (owned.isNotEmpty) ...[
+                      _ClubSectionHeader(
+                          title: 'My Clubs',
+                          subtitle: 'Clubs you created',
+                          count: owned.length),
+                      ...owned.map((c) => _ClubRowCard(club: c)),
+                      const SizedBox(height: 16),
+                    ],
+                    if (admin.isNotEmpty) ...[
+                      _ClubSectionHeader(
+                          title: 'Admin of',
+                          subtitle: 'Clubs you help manage',
+                          count: admin.length),
+                      ...admin.map((c) => _ClubRowCard(club: c)),
+                      const SizedBox(height: 16),
+                    ],
+                    if (member.isNotEmpty) ...[
+                      _ClubSectionHeader(
+                          title: 'Joined',
+                          subtitle: 'Clubs you\'re a member of',
+                          count: member.length),
+                      ...member.map((c) => _ClubRowCard(club: c)),
+                      const SizedBox(height: 16),
+                    ],
+                    if (recommended.isNotEmpty) ...[
+                      _ClubSectionHeader(
+                          title: 'Recommended',
+                          subtitle: 'Clubs you might like',
+                          count: recommended.length),
+                      ...recommended.map((c) => _ClubRowCard(club: c)),
+                    ],
+                    if (owned.isEmpty &&
+                        admin.isEmpty &&
+                        member.isEmpty &&
+                        recommended.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 80),
+                        child: Center(
+                          child: Text('No clubs yet',
+                              style: TextStyle(
+                                  color: scheme.onSurfaceVariant)),
+                        ),
                       ),
-                    );
-                  },
+                  ],
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSearchResults(GroupsProvider provider, ColorScheme scheme) {
+    final query = _searchController.text.toLowerCase().trim();
+    // Client-side mock filter: match name or handle across all sections.
+    final mockResults = MockClubData.clubs.where((c) {
+      return c.name.toLowerCase().contains(query) ||
+          c.handle.toLowerCase().contains(query);
+    }).toList();
+    final results = [...provider.searchedClubs, ...mockResults];
+
+    if (results.isEmpty) {
+      return Center(
+        child: Text('No clubs found',
+            style: TextStyle(color: scheme.onSurfaceVariant)),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: results.length,
+      itemBuilder: (context, i) => _ClubRowCard(club: results[i]),
     );
   }
 
@@ -289,6 +328,216 @@ class _ClubsTabState extends State<ClubsTab> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+}
+
+class _ClubSectionHeader extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final int count;
+  const _ClubSectionHeader({
+    required this.title,
+    required this.subtitle,
+    required this.count,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: scheme.onSurface,
+                      ),
+                ),
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: scheme.primary.withAlpha(30),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '$count',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: scheme.primary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ClubRowCard extends StatelessWidget {
+  final Club club;
+  const _ClubRowCard({required this.club});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+    final provider = context.read<GroupsProvider>();
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => ClubDetailPage(club: club)),
+      ),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: scheme.primary.withAlpha(30),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(child: Icon(Icons.groups, color: scheme.primary)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          club.name,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (!club.isPublic) ...[
+                        const SizedBox(width: 4),
+                        Icon(Icons.lock,
+                            size: 12, color: scheme.onSurfaceVariant),
+                      ],
+                      if (club.userRole != null) ...[
+                        const SizedBox(width: 6),
+                        _InlineRoleBadge(role: club.userRole!),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${club.handle}  ·  ${club.memberCount} members',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            if (!club.isMember)
+              _JoinOrRequestButton(club: club, provider: provider)
+            else
+              Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact join / request button used in the club list rows. Swaps copy,
+/// color, and enabled state based on the club's privacy and pending state.
+class _JoinOrRequestButton extends StatelessWidget {
+  final Club club;
+  final GroupsProvider provider;
+  const _JoinOrRequestButton({required this.club, required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    if (!club.isPublic && club.hasPendingRequest) {
+      return OutlinedButton(
+        onPressed: null,
+        style: OutlinedButton.styleFrom(
+          disabledForegroundColor: scheme.onSurfaceVariant,
+          side: BorderSide(color: scheme.outlineVariant),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8)),
+        ),
+        child: const Text('Requested'),
+      );
+    }
+
+    final label = club.isPublic ? 'Join' : 'Request';
+    return ElevatedButton(
+      onPressed: () => provider.joinClub(club.id),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: scheme.primary,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      child: Text(label, style: const TextStyle(color: Colors.white)),
+    );
+  }
+}
+
+class _InlineRoleBadge extends StatelessWidget {
+  final String role;
+  const _InlineRoleBadge({required this.role});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (bg, fg, label) = switch (role) {
+      'OWNER' => (Colors.amber.withAlpha(40), Colors.amber.shade800, 'OWNER'),
+      'ADMIN' => (scheme.primary.withAlpha(30), scheme.primary, 'ADMIN'),
+      _ => (scheme.surfaceContainerHighest, scheme.onSurfaceVariant, 'MEMBER'),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          color: fg,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
   }
 }
 
