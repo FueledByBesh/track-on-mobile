@@ -1,9 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/models/club.dart';
-import 'mock_clubs.dart';
+import 'package:trackon_mobile/data/models/club_settings.dart';
+import 'package:trackon_mobile/data/providers/groups_provider.dart';
+import 'package:trackon_mobile/data/services/club_service.dart';
 
-/// Club settings page — only reachable by the club OWNER.
-/// Four tabs: General, Admins, Permissions, Critical.
+/// Owner-only configuration surface. Four tabs:
+///   - General: identity fields + visibility overrides
+///   - Admins: member role management
+///   - Permissions: role-gated action knobs
+///   - Critical: transfer ownership + delete
+///
+/// Takes the current [Club] on construction so the initial render is
+/// immediate; the tabs each issue their own API calls for anything
+/// they own (settings, members list, transfers).
 class ClubSettingsPage extends StatefulWidget {
   final Club club;
   const ClubSettingsPage({super.key, required this.club});
@@ -54,7 +64,7 @@ class _ClubSettingsPageState extends State<ClubSettingsPage>
         children: [
           _GeneralTab(club: widget.club),
           _AdminsTab(club: widget.club),
-          const _PermissionsTab(),
+          _PermissionsTab(club: widget.club),
           _CriticalTab(club: widget.club),
         ],
       ),
@@ -82,6 +92,7 @@ class _GeneralTabState extends State<_GeneralTab> {
   late bool _showPosts;
   late bool _showChallenges;
   late bool _showMembers;
+  bool _saving = false;
 
   @override
   void initState() {
@@ -89,8 +100,7 @@ class _GeneralTabState extends State<_GeneralTab> {
     _nameCtrl = TextEditingController(text: widget.club.name);
     _handleCtrl = TextEditingController(text: widget.club.handle);
     _descCtrl = TextEditingController(text: widget.club.description ?? '');
-    _locationCtrl =
-        TextEditingController(text: widget.club.location ?? '');
+    _locationCtrl = TextEditingController(text: widget.club.location ?? '');
     _sportsCtrl =
         TextEditingController(text: widget.club.sportTypes.join(', '));
     _isPublic = widget.club.isPublic;
@@ -107,6 +117,60 @@ class _GeneralTabState extends State<_GeneralTab> {
     _locationCtrl.dispose();
     _sportsCtrl.dispose();
     super.dispose();
+  }
+
+  /// Saves identity fields via PATCH and, if any non-member visibility
+  /// override changed, PUTs the settings. Two round-trips but both
+  /// endpoints are cheap and this keeps the service boundaries clean.
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    final clubs = context.read<ClubApiService>();
+    try {
+      await clubs.update(
+        widget.club.id,
+        name: _nameCtrl.text.trim(),
+        handle: _handleCtrl.text.trim(),
+        description: _descCtrl.text,
+        location: _locationCtrl.text,
+        sportTypes: _sportsCtrl.text
+            .split(',')
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList(),
+        isPublic: _isPublic,
+      );
+
+      // Settings diff — only PUT if a visibility override flipped, so
+      // we don't bump the settings row's updated_at for no reason.
+      final startingPosts = widget.club.nonMembersCanViewPosts;
+      final startingChallenges = widget.club.nonMembersCanViewChallenges;
+      final startingMembers = widget.club.nonMembersCanViewMembers;
+      if (_showPosts != startingPosts ||
+          _showChallenges != startingChallenges ||
+          _showMembers != startingMembers) {
+        await clubs.updateSettings(
+          widget.club.id,
+          ClubSettings.patch(
+            nonMembersCanViewPosts: _showPosts,
+            nonMembersCanViewChallenges: _showChallenges,
+            nonMembersCanViewMembers: _showMembers,
+          ),
+        );
+      }
+
+      if (!mounted) return;
+      // Refresh the grouping so the Clubs tab shows any renamed / re-
+      // handled club on return.
+      context.read<GroupsProvider>().loadMyClubs();
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Saved')));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Could not save')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -210,7 +274,7 @@ class _GeneralTabState extends State<_GeneralTab> {
           const SizedBox(height: 8),
           _SwitchTile(
             title: 'Members list',
-            subtitle: 'Let guests see who\'s in the club.',
+            subtitle: "Let guests see who's in the club.",
             value: _showMembers,
             onChanged: (v) => setState(() => _showMembers = v),
           ),
@@ -219,11 +283,7 @@ class _GeneralTabState extends State<_GeneralTab> {
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Changes saved (mock)')),
-              );
-            },
+            onPressed: _saving ? null : _save,
             style: ElevatedButton.styleFrom(
               backgroundColor: scheme.primary,
               foregroundColor: Colors.white,
@@ -231,9 +291,15 @@ class _GeneralTabState extends State<_GeneralTab> {
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
             ),
-            child: const Text('Save changes',
-                style:
-                    TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+            child: _saving
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : const Text('Save changes',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 15)),
           ),
         ),
       ],
@@ -252,105 +318,145 @@ class _AdminsTab extends StatefulWidget {
 }
 
 class _AdminsTabState extends State<_AdminsTab> {
-  late List<ClubMember> _members;
+  late Future<List<ClubMember>> _future;
+  List<ClubMember>? _members;
 
   @override
   void initState() {
     super.initState();
-    _members = [...MockClubData.membersForClub(widget.club.id)];
-    _sort();
+    _future = _load();
   }
 
-  void _sort() {
-    const order = {'OWNER': 0, 'ADMIN': 1, 'MEMBER': 2};
-    _members.sort((a, b) =>
-        (order[a.role] ?? 3).compareTo(order[b.role] ?? 3));
+  Future<List<ClubMember>> _load() async {
+    final members =
+        await context.read<ClubApiService>().getMembers(widget.club.id);
+    members.sort((a, b) => a.role.index.compareTo(b.role.index));
+    _members = members;
+    return members;
   }
 
-  void _setRole(int i, String role) {
-    setState(() {
-      final m = _members[i];
-      _members[i] = ClubMember(
-        userId: m.userId,
-        name: m.name,
-        email: m.email,
-        role: role,
-        joinedAt: m.joinedAt,
-      );
-      _sort();
-    });
+  Future<void> _setRole(int i, ClubRole newRole) async {
+    final m = _members![i];
+    final clubs = context.read<ClubApiService>();
+    try {
+      final updated = newRole == ClubRole.admin
+          ? await clubs.promote(widget.club.id, m.userId)
+          : await clubs.demote(widget.club.id, m.userId);
+      if (!mounted) return;
+      setState(() {
+        _members![i] = updated;
+        _members!.sort((a, b) => a.role.index.compareTo(b.role.index));
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not change role')));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _members.length,
-      itemBuilder: (context, i) {
-        final m = _members[i];
-        final isOwner = m.role == 'OWNER';
-        final isAdmin = m.role == 'ADMIN';
-        final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: cardColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: scheme.outlineVariant),
-          ),
-          child: Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: scheme.primary.withAlpha(30),
-                child: Text(
-                  m.name.isNotEmpty ? m.name[0] : '?',
-                  style: TextStyle(
-                      color: scheme.primary, fontWeight: FontWeight.w600),
+    return FutureBuilder<List<ClubMember>>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snap.hasError || _members == null) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Could not load members',
+                    style: TextStyle(color: scheme.onSurfaceVariant)),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () =>
+                      setState(() => _future = _load()),
+                  child: const Text('Retry'),
                 ),
+              ],
+            ),
+          );
+        }
+
+        final members = _members!;
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: members.length,
+          itemBuilder: (context, i) {
+            final m = members[i];
+            final isOwner = m.role == ClubRole.owner;
+            final isAdmin = m.role == ClubRole.admin;
+            final cardColor =
+                Theme.of(context).cardTheme.color ?? scheme.surface;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: cardColor,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: scheme.outlineVariant),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: scheme.primary.withAlpha(30),
+                    child: Text(
+                      m.name.isNotEmpty ? m.name[0] : '?',
+                      style: TextStyle(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Flexible(
-                          child: Text(
-                            m.name,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: scheme.onSurface,
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                m.name,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: scheme.onSurface,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                            const SizedBox(width: 6),
+                            _RoleChip(role: m.role),
+                          ],
                         ),
-                        const SizedBox(width: 6),
-                        _RoleChip(role: m.role),
+                        Text(
+                          m.email,
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.onSurfaceVariant),
+                        ),
                       ],
                     ),
-                    Text(
-                      m.email,
-                      style: TextStyle(
-                          fontSize: 12, color: scheme.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-              if (!isOwner)
-                IconButton(
-                  icon: Icon(
-                    isAdmin ? Icons.person_remove_alt_1 : Icons.shield_outlined,
-                    color: scheme.primary,
                   ),
-                  tooltip: isAdmin ? 'Demote to member' : 'Promote to admin',
-                  onPressed: () =>
-                      _setRole(i, isAdmin ? 'MEMBER' : 'ADMIN'),
-                ),
-            ],
-          ),
+                  if (!isOwner)
+                    IconButton(
+                      icon: Icon(
+                        isAdmin
+                            ? Icons.person_remove_alt_1
+                            : Icons.shield_outlined,
+                        color: scheme.primary,
+                      ),
+                      tooltip:
+                          isAdmin ? 'Demote to member' : 'Promote to admin',
+                      onPressed: () => _setRole(i,
+                          isAdmin ? ClubRole.member : ClubRole.admin),
+                    ),
+                ],
+              ),
+            );
+          },
         );
       },
     );
@@ -360,97 +466,180 @@ class _AdminsTabState extends State<_AdminsTab> {
 // ============ PERMISSIONS ============
 
 class _PermissionsTab extends StatefulWidget {
-  const _PermissionsTab();
+  final Club club;
+  const _PermissionsTab({required this.club});
 
   @override
   State<_PermissionsTab> createState() => _PermissionsTabState();
 }
 
 class _PermissionsTabState extends State<_PermissionsTab> {
-  // Mock local-only permission state. Swap for server fields later.
-  String _whoCanPost = 'MEMBERS';
-  String _whoCanCreateChallenges = 'ADMINS';
-  String _whoCanRemoveMembers = 'ADMINS';
-  String _whoCanInvite = 'MEMBERS';
-  bool _autoApproveJoinRequests = false;
-  bool _requireApprovalForPosts = false;
+  late Future<ClubSettings> _future;
+  ClubSettings? _settings;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<ClubSettings> _load() async {
+    final s =
+        await context.read<ClubApiService>().getSettings(widget.club.id);
+    _settings = s;
+    return s;
+  }
+
+  /// Each knob PUTs immediately with just that field set. Makes the UI
+  /// feel responsive and avoids a Save button down here — there's
+  /// nothing to undo since all changes are atomic and server-echoed.
+  Future<void> _save(Map<String, dynamic> patch) async {
+    setState(() => _saving = true);
+    try {
+      final updated = await context
+          .read<ClubApiService>()
+          .updateSettings(widget.club.id, patch);
+      if (!mounted) return;
+      setState(() => _settings = updated);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not save change')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _SectionLabel(label: 'Content'),
-        _ChoiceTile(
-          title: 'Who can post',
-          value: _whoCanPost,
-          options: const [
-            ('OWNER', 'Owner only'),
-            ('ADMINS', 'Admins & owner'),
-            ('MEMBERS', 'All members'),
-          ],
-          onChanged: (v) => setState(() => _whoCanPost = v),
-        ),
-        const SizedBox(height: 8),
-        _ChoiceTile(
-          title: 'Who can create challenges',
-          value: _whoCanCreateChallenges,
-          options: const [
-            ('OWNER', 'Owner only'),
-            ('ADMINS', 'Admins & owner'),
-            ('MEMBERS', 'All members'),
-          ],
-          onChanged: (v) => setState(() => _whoCanCreateChallenges = v),
-        ),
-        const SizedBox(height: 8),
-        _SwitchTile(
-          title: 'Require approval for posts',
-          subtitle:
-              'Posts by members need an admin to approve before going live.',
-          value: _requireApprovalForPosts,
-          onChanged: (v) => setState(() => _requireApprovalForPosts = v),
-        ),
-        const SizedBox(height: 20),
-        _SectionLabel(label: 'Membership'),
-        _ChoiceTile(
-          title: 'Who can invite others',
-          value: _whoCanInvite,
-          options: const [
-            ('OWNER', 'Owner only'),
-            ('ADMINS', 'Admins & owner'),
-            ('MEMBERS', 'All members'),
-          ],
-          onChanged: (v) => setState(() => _whoCanInvite = v),
-        ),
-        const SizedBox(height: 8),
-        _ChoiceTile(
-          title: 'Who can remove members',
-          value: _whoCanRemoveMembers,
-          options: const [
-            ('OWNER', 'Owner only'),
-            ('ADMINS', 'Admins & owner'),
-          ],
-          onChanged: (v) => setState(() => _whoCanRemoveMembers = v),
-        ),
-        const SizedBox(height: 8),
-        _SwitchTile(
-          title: 'Auto-approve join requests',
-          subtitle:
-              'For private clubs. Requests become members without admin review.',
-          value: _autoApproveJoinRequests,
-          onChanged: (v) => setState(() => _autoApproveJoinRequests = v),
-        ),
-      ],
+    return FutureBuilder<ClubSettings>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snap.hasError || _settings == null) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('Could not load settings'),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () =>
+                      setState(() => _future = _load()),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final s = _settings!;
+        return AbsorbPointer(
+          absorbing: _saving,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _SectionLabel(label: 'Content'),
+              _RoleChoiceTile(
+                title: 'Who can post',
+                value: s.whoCanPost,
+                options: const [
+                  ClubRole.owner,
+                  ClubRole.admin,
+                  ClubRole.member
+                ],
+                onChanged: (v) =>
+                    _save(ClubSettings.patch(whoCanPost: v)),
+              ),
+              const SizedBox(height: 8),
+              _RoleChoiceTile(
+                title: 'Who can create challenges',
+                value: s.whoCanCreateChallenges,
+                options: const [
+                  ClubRole.owner,
+                  ClubRole.admin,
+                  ClubRole.member
+                ],
+                onChanged: (v) => _save(
+                    ClubSettings.patch(whoCanCreateChallenges: v)),
+              ),
+              const SizedBox(height: 8),
+              _SwitchTile(
+                title: 'Require approval for posts',
+                subtitle: 'Posts by members need an admin to approve '
+                    'before going live.',
+                value: s.requirePostApproval,
+                onChanged: (v) =>
+                    _save(ClubSettings.patch(requirePostApproval: v)),
+              ),
+              const SizedBox(height: 20),
+              _SectionLabel(label: 'Membership'),
+              _RoleChoiceTile(
+                title: 'Who can invite others',
+                value: s.whoCanInvite,
+                options: const [
+                  ClubRole.owner,
+                  ClubRole.admin,
+                  ClubRole.member
+                ],
+                onChanged: (v) =>
+                    _save(ClubSettings.patch(whoCanInvite: v)),
+              ),
+              const SizedBox(height: 8),
+              _RoleChoiceTile(
+                title: 'Who can remove members',
+                value: s.whoCanRemoveMembers,
+                // Server CHECK constraint forbids MEMBER here.
+                options: const [ClubRole.owner, ClubRole.admin],
+                onChanged: (v) =>
+                    _save(ClubSettings.patch(whoCanRemoveMembers: v)),
+              ),
+              const SizedBox(height: 8),
+              _RoleChoiceTile(
+                title: 'Who can approve join requests',
+                value: s.whoCanApproveJoinRequests,
+                options: const [ClubRole.owner, ClubRole.admin],
+                onChanged: (v) => _save(
+                    ClubSettings.patch(whoCanApproveJoinRequests: v)),
+              ),
+              const SizedBox(height: 8),
+              _RoleChoiceTile(
+                title: 'Who can ban / unban',
+                value: s.whoCanBan,
+                options: const [ClubRole.owner, ClubRole.admin],
+                onChanged: (v) => _save(ClubSettings.patch(whoCanBan: v)),
+              ),
+              const SizedBox(height: 8),
+              _SwitchTile(
+                title: 'Allow join without request',
+                subtitle: "For private clubs where the owner doesn't "
+                    "need to approve anyone — members join directly.",
+                value: s.allowJoinWithoutRequest,
+                onChanged: (v) =>
+                    _save(ClubSettings.patch(allowJoinWithoutRequest: v)),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
 
 // ============ CRITICAL ============
 
-class _CriticalTab extends StatelessWidget {
+class _CriticalTab extends StatefulWidget {
   final Club club;
   const _CriticalTab({required this.club});
 
+  @override
+  State<_CriticalTab> createState() => _CriticalTabState();
+}
+
+class _CriticalTabState extends State<_CriticalTab> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -470,9 +659,9 @@ class _CriticalTab extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'These actions can\'t be undone. Proceed with caution.',
-                  style: TextStyle(
-                      color: scheme.onSurface, fontSize: 13),
+                  "These actions can't be undone. Proceed with caution.",
+                  style:
+                      TextStyle(color: scheme.onSurface, fontSize: 13),
                 ),
               ),
             ],
@@ -482,15 +671,15 @@ class _CriticalTab extends StatelessWidget {
         _DangerActionTile(
           icon: Icons.swap_horiz,
           title: 'Transfer ownership',
-          subtitle: 'Hand over this club to another member. '
-              'You\'ll become an admin.',
+          subtitle: 'Hand over this club to another member. They must '
+              "accept. You'll become an admin if they do.",
           onTap: () => _showTransferSheet(context),
         ),
         const SizedBox(height: 12),
         _DangerActionTile(
           icon: Icons.delete_forever,
           title: 'Delete club',
-          subtitle: 'Permanently remove ${club.name}, its posts, '
+          subtitle: 'Permanently remove ${widget.club.name}, its posts, '
               'challenges, and member records.',
           destructive: true,
           onTap: () => _confirmDelete(context),
@@ -499,11 +688,29 @@ class _CriticalTab extends StatelessWidget {
     );
   }
 
-  void _showTransferSheet(BuildContext context) {
-    final members = MockClubData.membersForClub(club.id)
-        .where((m) => m.role != 'OWNER')
-        .toList();
+  Future<void> _showTransferSheet(BuildContext context) async {
+    final clubs = context.read<ClubApiService>();
     final scheme = Theme.of(context).colorScheme;
+    List<ClubMember>? members;
+    try {
+      members = (await clubs.getMembers(widget.club.id))
+          .where((m) => m.role != ClubRole.owner)
+          .toList();
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not load members')));
+      return;
+    }
+
+    if (!context.mounted) return;
+    if (members.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('No other members to transfer to')));
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -519,7 +726,8 @@ class _CriticalTab extends StatelessWidget {
                       fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
               Text(
-                'Pick a member to become the new owner.',
+                'Pick a member. They\'ll receive a request they can '
+                'accept or decline.',
                 style: TextStyle(color: scheme.onSurfaceVariant),
               ),
               const SizedBox(height: 16),
@@ -528,9 +736,9 @@ class _CriticalTab extends StatelessWidget {
                     maxHeight: MediaQuery.of(ctx).size.height * 0.5),
                 child: ListView.builder(
                   shrinkWrap: true,
-                  itemCount: members.length,
+                  itemCount: members!.length,
                   itemBuilder: (_, i) {
-                    final m = members[i];
+                    final m = members![i];
                     return ListTile(
                       leading: CircleAvatar(
                         backgroundColor: scheme.primary.withAlpha(30),
@@ -542,7 +750,7 @@ class _CriticalTab extends StatelessWidget {
                       title: Text(m.name),
                       subtitle: Text(m.email),
                       trailing: _RoleChip(role: m.role),
-                      onTap: () async {
+                      onTap: () {
                         Navigator.pop(ctx);
                         _confirmTransfer(context, m);
                       },
@@ -562,10 +770,11 @@ class _CriticalTab extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Transfer ownership?'),
+        title: const Text('Send ownership transfer?'),
         content: Text(
-            '${newOwner.name} will become the new owner. You\'ll keep admin '
-            'access but won\'t be able to reverse this yourself.'),
+            '${newOwner.name} will be asked to take over as owner. If '
+            "they accept, you'll become an admin. They have 7 days to "
+            'respond.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -574,16 +783,23 @@ class _CriticalTab extends StatelessWidget {
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Transfer'),
+            child: const Text('Send'),
           ),
         ],
       ),
     );
-    if (!context.mounted) return;
-    if (confirmed == true) {
+    if (!context.mounted || confirmed != true) return;
+    try {
+      await context
+          .read<ClubApiService>()
+          .initiateTransfer(widget.club.id, newOwner.userId);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Transfer request sent to ${newOwner.name}')));
+    } catch (_) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ownership transferred to ${newOwner.name} (mock)')),
-      );
+          const SnackBar(content: Text('Could not send transfer')));
     }
   }
 
@@ -597,13 +813,13 @@ class _CriticalTab extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('This will permanently remove ${club.name}. Type the '
-                'club name to confirm.'),
+            Text('This will permanently remove ${widget.club.name}. '
+                'Type the club name to confirm.'),
             const SizedBox(height: 12),
             TextField(
               controller: typed,
               decoration: InputDecoration(
-                hintText: club.name,
+                hintText: widget.club.name,
                 border: const OutlineInputBorder(),
                 isDense: true,
               ),
@@ -617,7 +833,7 @@ class _CriticalTab extends StatelessWidget {
           ),
           TextButton(
             onPressed: () {
-              if (typed.text.trim() == club.name) {
+              if (typed.text.trim() == widget.club.name) {
                 Navigator.pop(ctx, true);
               }
             },
@@ -627,12 +843,23 @@ class _CriticalTab extends StatelessWidget {
         ],
       ),
     );
-    if (!context.mounted) return;
-    if (confirmed == true) {
-      Navigator.of(context).pop(); // leave settings page
+    if (!context.mounted || confirmed != true) return;
+    try {
+      await context.read<ClubApiService>().delete(widget.club.id);
+      if (!context.mounted) return;
+      // Refresh the "My Clubs" grouping so the now-deleted club
+      // disappears on return.
+      context.read<GroupsProvider>().loadMyClubs();
+      // Pop settings + detail pages.
+      Navigator.of(context)
+        ..pop()
+        ..pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${club.name} deleted (mock)')),
-      );
+          SnackBar(content: Text('${widget.club.name} deleted')));
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not delete club')));
     }
   }
 }
@@ -728,17 +955,25 @@ class _SwitchTile extends StatelessWidget {
   }
 }
 
-class _ChoiceTile extends StatelessWidget {
+/// Role-gated choice tile. Maps between `ClubRole` and a human label on
+/// render; saves the typed enum back to the caller.
+class _RoleChoiceTile extends StatelessWidget {
   final String title;
-  final String value;
-  final List<(String, String)> options; // (value, label)
-  final ValueChanged<String> onChanged;
-  const _ChoiceTile({
+  final ClubRole value;
+  final List<ClubRole> options;
+  final ValueChanged<ClubRole> onChanged;
+  const _RoleChoiceTile({
     required this.title,
     required this.value,
     required this.options,
     required this.onChanged,
   });
+
+  static String _label(ClubRole r) => switch (r) {
+        ClubRole.owner => 'Owner only',
+        ClubRole.admin => 'Admins & owner',
+        ClubRole.member => 'All members',
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -761,25 +996,23 @@ class _ChoiceTile extends StatelessWidget {
             spacing: 8,
             runSpacing: 6,
             children: options.map((opt) {
-              final selected = opt.$1 == value;
+              final selected = opt == value;
               return GestureDetector(
-                onTap: () => onChanged(opt.$1),
+                onTap: selected ? null : () => onChanged(opt),
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: selected
                         ? scheme.primary.withAlpha(30)
                         : scheme.surfaceContainerHighest,
                     border: Border.all(
-                      color: selected
-                          ? scheme.primary
-                          : Colors.transparent,
+                      color: selected ? scheme.primary : Colors.transparent,
                     ),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
-                    opt.$2,
+                    _label(opt),
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -799,16 +1032,22 @@ class _ChoiceTile extends StatelessWidget {
 }
 
 class _RoleChip extends StatelessWidget {
-  final String role;
+  final ClubRole role;
   const _RoleChip({required this.role});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final (bg, fg, label) = switch (role) {
-      'OWNER' => (Colors.amber.withAlpha(40), Colors.amber.shade800, 'OWNER'),
-      'ADMIN' => (scheme.primary.withAlpha(30), scheme.primary, 'ADMIN'),
-      _ => (scheme.surfaceContainerHighest, scheme.onSurfaceVariant, 'MEMBER'),
+      ClubRole.owner =>
+        (Colors.amber.withAlpha(40), Colors.amber.shade800, 'OWNER'),
+      ClubRole.admin =>
+        (scheme.primary.withAlpha(30), scheme.primary, 'ADMIN'),
+      ClubRole.member => (
+          scheme.surfaceContainerHighest,
+          scheme.onSurfaceVariant,
+          'MEMBER'
+        ),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),

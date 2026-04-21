@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/models/club.dart';
-import 'package:trackon_mobile/data/models/post.dart';
+import 'package:trackon_mobile/data/models/post.dart' as post_model;
+import 'package:trackon_mobile/data/providers/groups_provider.dart';
+import 'package:trackon_mobile/data/services/club_post_service.dart';
+import 'package:trackon_mobile/data/services/club_service.dart';
 import 'club_notification_settings_page.dart';
 import 'club_settings_page.dart';
-import 'mock_clubs.dart';
 
+/// Detail view for a single club. Loads the full [Club] + tab contents
+/// from the API on open; state is local to this page (not held in a
+/// provider) because per-club detail data is cheap to refetch when the
+/// user navigates back.
 class ClubDetailPage extends StatefulWidget {
-  final Club club;
-  const ClubDetailPage({super.key, required this.club});
+  final String clubId;
+  const ClubDetailPage({super.key, required this.clubId});
 
   @override
   State<ClubDetailPage> createState() => _ClubDetailPageState();
@@ -17,14 +24,16 @@ class ClubDetailPage extends StatefulWidget {
 class _ClubDetailPageState extends State<ClubDetailPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  late Club _club;
+  Club? _club;
+  bool _loading = true;
+  String? _error;
   bool _aboutVisible = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _club = widget.club;
+    _load();
   }
 
   @override
@@ -33,66 +42,126 @@ class _ClubDetailPageState extends State<ClubDetailPage>
     super.dispose();
   }
 
-  void _toggleMembership() {
-    setState(() {
-      // For private clubs the user hasn't joined: toggle a pending request
-      // instead of joining. Mock-only — the backend will do this properly.
-      if (!_club.isPublic && !_club.isMember) {
-        _club = _copyWith(hasPendingRequest: !_club.hasPendingRequest);
-        return;
-      }
-      _club = _copyWith(
-        isMember: !_club.isMember,
-        memberCount: _club.isMember
-            ? _club.memberCount - 1
-            : _club.memberCount + 1,
-        hasPendingRequest: false,
-      );
-    });
+  Future<void> _load() async {
+    final clubs = context.read<ClubApiService>();
+    try {
+      final club = await clubs.getById(widget.clubId);
+      if (!mounted) return;
+      setState(() {
+        _club = club;
+        _loading = false;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Failed to load club';
+      });
+    }
   }
 
-  Club _copyWith({
-    bool? isMember,
-    int? memberCount,
-    bool? hasPendingRequest,
-  }) {
-    return Club(
-      id: _club.id,
-      name: _club.name,
-      handle: _club.handle,
-      description: _club.description,
-      createdByName: _club.createdByName,
-      memberCount: memberCount ?? _club.memberCount,
-      isMember: isMember ?? _club.isMember,
-      createdAt: _club.createdAt,
-      sportTypes: _club.sportTypes,
-      location: _club.location,
-      userRole: _club.userRole,
-      isPublic: _club.isPublic,
-      hasPendingRequest: hasPendingRequest ?? _club.hasPendingRequest,
-      nonMembersCanViewPosts: _club.nonMembersCanViewPosts,
-      nonMembersCanViewChallenges: _club.nonMembersCanViewChallenges,
-      nonMembersCanViewMembers: _club.nonMembersCanViewMembers,
+  /// Hit after any action that may have changed the viewer's relationship
+  /// with the club (join, request, leave, cancel request). Keeps the
+  /// button state + the membership tabs in sync.
+  Future<void> _reload() => _load();
+
+  Future<void> _onJoinPressed() async {
+    final club = _club;
+    if (club == null) return;
+    final provider = context.read<GroupsProvider>();
+    try {
+      if (!club.isPublic && club.hasPendingRequest) {
+        // Clicking the "Requested" chip cancels the request.
+        await provider.cancelMyJoinRequest(club.id);
+      } else if (club.isPublic) {
+        await provider.joinClub(club.id);
+      } else {
+        await provider.requestJoinClub(club.id);
+      }
+      await _reload();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Something went wrong')),
+      );
+    }
+  }
+
+  Future<void> _onLeave() async {
+    final club = _club;
+    if (club == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Leave club?'),
+        content: Text('You\'ll stop seeing posts and challenges from '
+            '${club.name}. You can rejoin anytime.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
     );
+    if (!mounted || confirmed != true) return;
+    try {
+      await context.read<GroupsProvider>().leaveClub(club.id);
+      await _reload();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not leave club')));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_error != null || _club == null) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 48),
+              const SizedBox(height: 12),
+              Text(_error ?? 'Club not found'),
+              const SizedBox(height: 12),
+              TextButton(onPressed: _load, child: const Text('Retry')),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final club = _club!;
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       body: NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
           _ClubSliverHeader(
-            club: _club,
-            onJoinToggle: _toggleMembership,
+            club: club,
+            onJoinPressed: _onJoinPressed,
+            onLeave: _onLeave,
             aboutVisible: _aboutVisible,
-            onToggleAbout: _club.description != null &&
-                    _club.description!.isNotEmpty
+            onToggleAbout: club.description != null &&
+                    club.description!.isNotEmpty
                 ? () => setState(() => _aboutVisible = !_aboutVisible)
                 : null,
           ),
-          if (_club.description != null && _club.description!.isNotEmpty)
+          if (club.banInfo != null)
+            SliverToBoxAdapter(child: _BanBanner(banInfo: club.banInfo!)),
+          if (club.description != null && club.description!.isNotEmpty)
             SliverToBoxAdapter(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 450),
@@ -106,7 +175,7 @@ class _ClubDetailPageState extends State<ClubDetailPage>
                 child: _aboutVisible
                     ? _ClubAboutCard(
                         key: const ValueKey('about-visible'),
-                        club: _club,
+                        club: club,
                         onClose: () => setState(() => _aboutVisible = false),
                       )
                     : const SizedBox.shrink(key: ValueKey('about-hidden')),
@@ -126,17 +195,16 @@ class _ClubDetailPageState extends State<ClubDetailPage>
                   Tab(text: 'Members'),
                 ],
               ),
-              backgroundColor:
-                  Theme.of(context).scaffoldBackgroundColor,
+              backgroundColor: Theme.of(context).scaffoldBackgroundColor,
             ),
           ),
         ],
         body: TabBarView(
           controller: _tabController,
           children: [
-            _ClubPostsTab(club: _club),
-            _ClubChallengesTab(club: _club),
-            _ClubMembersTab(club: _club),
+            _ClubPostsTab(club: club),
+            _ClubChallengesTab(club: club),
+            _ClubMembersTab(club: club),
           ],
         ),
       ),
@@ -148,12 +216,14 @@ class _ClubDetailPageState extends State<ClubDetailPage>
 
 class _ClubSliverHeader extends StatelessWidget {
   final Club club;
-  final VoidCallback onJoinToggle;
+  final VoidCallback onJoinPressed;
+  final VoidCallback onLeave;
   final bool aboutVisible;
   final VoidCallback? onToggleAbout;
   const _ClubSliverHeader({
     required this.club,
-    required this.onJoinToggle,
+    required this.onJoinPressed,
+    required this.onLeave,
     required this.aboutVisible,
     required this.onToggleAbout,
   });
@@ -171,7 +241,7 @@ class _ClubSliverHeader extends StatelessWidget {
       foregroundColor: Colors.white,
       title: Text(club.name),
       actions: [
-        if (club.userRole == 'OWNER')
+        if (club.userRole == ClubRole.owner)
           IconButton(
             tooltip: 'Club settings',
             icon: const Icon(Icons.settings),
@@ -191,19 +261,16 @@ class _ClubSliverHeader extends StatelessWidget {
         background: Stack(
           fit: StackFit.expand,
           children: [
-            // Gradient cover (replace with real cover image later)
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    scheme.primary,
-                    scheme.primary.withAlpha(180),
-                  ],
-                ),
-              ),
-            ),
+            // Avatar as background if we have one; else a gradient based
+            // on the accent color.
+            if (club.avatarImageUrl != null)
+              Image.network(
+                club.avatarImageUrl!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => _gradient(scheme),
+              )
+            else
+              _gradient(scheme),
             // Dark overlay for text readability
             Container(
               decoration: BoxDecoration(
@@ -212,12 +279,11 @@ class _ClubSliverHeader extends StatelessWidget {
                   end: Alignment.bottomCenter,
                   colors: [
                     Colors.transparent,
-                    Colors.black.withAlpha(100),
+                    Colors.black.withAlpha(140),
                   ],
                 ),
               ),
             ),
-            // Content
             Positioned(
               left: 16,
               right: 16,
@@ -225,8 +291,6 @@ class _ClubSliverHeader extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Title row — for joined members, the About toggle lives
-                  // here to save vertical space for the hero image.
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
@@ -264,36 +328,32 @@ class _ClubSliverHeader extends StatelessWidget {
                       Icon(Icons.people,
                           color: Colors.white.withAlpha(200), size: 14),
                       const SizedBox(width: 4),
-                      Text(
-                        '${club.memberCount} members',
-                        style: TextStyle(
-                          color: Colors.white.withAlpha(220),
-                          fontSize: 13,
-                        ),
-                      ),
+                      Text('${club.memberCount} members',
+                          style: TextStyle(
+                              color: Colors.white.withAlpha(220),
+                              fontSize: 13)),
                       const SizedBox(width: 12),
                       Icon(Icons.event,
                           color: Colors.white.withAlpha(200), size: 14),
                       const SizedBox(width: 4),
-                      Text(
-                        'Since $createdDate',
-                        style: TextStyle(
-                          color: Colors.white.withAlpha(220),
-                          fontSize: 13,
-                        ),
-                      ),
+                      Text('Since $createdDate',
+                          style: TextStyle(
+                              color: Colors.white.withAlpha(220),
+                              fontSize: 13)),
                     ],
                   ),
-                  // Non-members still get the Join button (and About toggle
-                  // beside it) below the meta row.
-                  if (!club.isMember) ...[
+                  // Non-members get the Join/Request button row. Banned
+                  // users see the button disabled from the banner below
+                  // the hero; leave the hero button gone to avoid a
+                  // confusing dual affordance.
+                  if (!club.isMember && !club.isBanned) ...[
                     const SizedBox(height: 12),
                     Row(
                       children: [
                         _JoinButton(
                           isPublic: club.isPublic,
                           hasPendingRequest: club.hasPendingRequest,
-                          onPressed: onJoinToggle,
+                          onPressed: onJoinPressed,
                         ),
                         if (onToggleAbout != null) ...[
                           const SizedBox(width: 12),
@@ -314,6 +374,16 @@ class _ClubSliverHeader extends StatelessWidget {
     );
   }
 
+  Widget _gradient(ColorScheme scheme) => Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [scheme.primary, scheme.primary.withAlpha(180)],
+          ),
+        ),
+      );
+
   String _formatCreatedAt(String iso) {
     try {
       return DateFormat('MMM yyyy').format(DateTime.parse(iso).toLocal());
@@ -323,7 +393,7 @@ class _ClubSliverHeader extends StatelessWidget {
   }
 
   void _showClubMenu(BuildContext context) {
-    final isOwner = club.userRole == 'OWNER';
+    final isOwner = club.userRole == ClubRole.owner;
     showModalBottomSheet(
       context: context,
       builder: (_) => SafeArea(
@@ -335,8 +405,6 @@ class _ClubSliverHeader extends StatelessWidget {
               title: const Text('Share club'),
               onTap: () => Navigator.pop(context),
             ),
-            // Notification settings are member-only — nothing to subscribe
-            // to when you're a guest.
             if (club.isMember)
               ListTile(
                 leading: const Icon(Icons.notifications_none),
@@ -352,9 +420,6 @@ class _ClubSliverHeader extends StatelessWidget {
                   );
                 },
               ),
-            // Owners can't report or leave their own club — reporting is
-            // handled by platform admins, and leaving requires transferring
-            // ownership first (done from settings).
             if (!isOwner)
               ListTile(
                 leading: const Icon(Icons.flag_outlined, color: Colors.red),
@@ -367,39 +432,15 @@ class _ClubSliverHeader extends StatelessWidget {
                 leading: const Icon(Icons.logout, color: Colors.red),
                 title: const Text('Leave club',
                     style: TextStyle(color: Colors.red)),
-                onTap: () => _confirmLeave(context),
+                onTap: () {
+                  Navigator.pop(context);
+                  onLeave();
+                },
               ),
           ],
         ),
       ),
     );
-  }
-
-  Future<void> _confirmLeave(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Leave club?'),
-        content: Text('You\'ll stop seeing posts and challenges from '
-            '${club.name}. You can rejoin anytime.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Leave'),
-          ),
-        ],
-      ),
-    );
-    if (!context.mounted) return;
-    if (confirmed == true) {
-      Navigator.pop(context); // close the bottom sheet
-      onJoinToggle();
-    }
   }
 }
 
@@ -415,8 +456,8 @@ class _JoinButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Private club with a pending request — show outlined "Requested" chip
-    // that cancels the request on tap.
+    // Private club with a pending request — outlined chip that cancels
+    // the request on tap.
     if (!isPublic && hasPendingRequest) {
       return OutlinedButton.icon(
         onPressed: onPressed,
@@ -438,23 +479,21 @@ class _JoinButton extends StatelessWidget {
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.white,
         foregroundColor: Theme.of(context).colorScheme.primary,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
       ),
-      child: Text(label,
-          style: const TextStyle(fontWeight: FontWeight.w700)),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
     );
   }
 }
 
 /// Fades + collapses the About toggle button when the About section is
-/// visible below the hero, so only one "About" label is on screen at a time.
-/// When the user re-collapses the section, the button fades back in.
+/// visible so only one "About" label is on screen at a time.
 class _AboutToggleSwitcher extends StatelessWidget {
   final bool expanded;
   final VoidCallback onPressed;
-  const _AboutToggleSwitcher({required this.expanded, required this.onPressed});
+  const _AboutToggleSwitcher(
+      {required this.expanded, required this.onPressed});
 
   @override
   Widget build(BuildContext context) {
@@ -529,18 +568,70 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   double get minExtent => tabBar.preferredSize.height;
-
   @override
   double get maxExtent => tabBar.preferredSize.height;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(color: backgroundColor, child: tabBar);
   }
 
   @override
   bool shouldRebuild(covariant _TabBarDelegate old) =>
       old.tabBar != tabBar || old.backgroundColor != backgroundColor;
+}
+
+// ============ BAN BANNER ============
+
+class _BanBanner extends StatelessWidget {
+  final ClubBanInfo banInfo;
+  const _BanBanner({required this.banInfo});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = banInfo.bannedUntil == null
+        ? "You're banned from this club"
+        : "You're banned from this club until "
+            "${DateFormat('MMM d, yyyy').format(banInfo.bannedUntil!.toLocal())}";
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.red.withAlpha(20),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red.withAlpha(90)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.block, color: Colors.red),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(text,
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onSurface)),
+                  if (banInfo.reason != null &&
+                      banInfo.reason!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(banInfo.reason!,
+                        style: TextStyle(
+                            color: scheme.onSurfaceVariant, fontSize: 13)),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ============ ABOUT CARD ============
@@ -567,7 +658,6 @@ class _ClubAboutCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Tappable header — tapping "About" + chevron collapses the card
             InkWell(
               onTap: onClose,
               borderRadius: const BorderRadius.only(
@@ -615,25 +705,22 @@ class _ClubAboutCard extends StatelessWidget {
                     const SizedBox(height: 10),
                   ],
                   _MetaRow(
-                    icon: Icons.alternate_email,
-                    label: 'Handle',
-                    value: club.handle,
-                  ),
+                      icon: Icons.alternate_email,
+                      label: 'Handle',
+                      value: '@${club.handle}'),
                   if (club.sportTypes.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     _MetaRow(
-                      icon: Icons.sports_score,
-                      label: 'Sports',
-                      value: club.sportTypes.join(' · '),
-                    ),
+                        icon: Icons.sports_score,
+                        label: 'Sports',
+                        value: club.sportTypes.join(' · ')),
                   ],
                   if (club.location != null && club.location!.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     _MetaRow(
-                      icon: Icons.place_outlined,
-                      label: 'Location',
-                      value: club.location!,
-                    ),
+                        icon: Icons.place_outlined,
+                        label: 'Location',
+                        value: club.location!),
                   ],
                   const SizedBox(height: 8),
                   _MetaRow(
@@ -643,16 +730,14 @@ class _ClubAboutCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   _MetaRow(
-                    icon: Icons.event_outlined,
-                    label: 'Created',
-                    value: createdDate,
-                  ),
+                      icon: Icons.event_outlined,
+                      label: 'Created',
+                      value: createdDate),
                   const SizedBox(height: 8),
                   _MetaRow(
-                    icon: Icons.person_outline,
-                    label: 'Owner',
-                    value: club.createdByName,
-                  ),
+                      icon: Icons.person_outline,
+                      label: 'Owner',
+                      value: club.createdByName),
                 ],
               ),
             ),
@@ -703,10 +788,7 @@ class _MetaRow extends StatelessWidget {
         Expanded(
           child: Text(
             value,
-            style: TextStyle(
-              fontSize: 13,
-              color: scheme.onSurface,
-            ),
+            style: TextStyle(fontSize: 13, color: scheme.onSurface),
           ),
         ),
       ],
@@ -716,12 +798,31 @@ class _MetaRow extends StatelessWidget {
 
 // ============ POSTS TAB ============
 
-class _ClubPostsTab extends StatelessWidget {
+class _ClubPostsTab extends StatefulWidget {
   final Club club;
   const _ClubPostsTab({required this.club});
 
   @override
+  State<_ClubPostsTab> createState() => _ClubPostsTabState();
+}
+
+class _ClubPostsTabState extends State<_ClubPostsTab> {
+  late Future<List<post_model.Post>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _loadPosts();
+  }
+
+  Future<List<post_model.Post>> _loadPosts() {
+    if (!widget.club.canViewPosts) return Future.value(const []);
+    return context.read<ClubPostApiService>().getByClub(widget.club.id);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final club = widget.club;
     if (!club.canViewPosts) {
       return const _LockedSection(
         icon: Icons.lock_outline,
@@ -729,35 +830,53 @@ class _ClubPostsTab extends StatelessWidget {
         detail: 'Join this club to see posts from its members.',
       );
     }
-    final posts = MockClubData.postsForClub(club.id);
     final scheme = Theme.of(context).colorScheme;
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // Composer (members only)
-        if (club.isMember) ...[
-          _PostComposer(clubName: club.name),
-          const SizedBox(height: 16),
-        ],
-        // Posts
-        ...posts.map((p) => _ClubPostCard(post: p)),
-        if (posts.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 48),
-            child: Center(
-              child: Column(
-                children: [
-                  Icon(Icons.forum_outlined,
-                      size: 40, color: scheme.onSurfaceVariant),
-                  const SizedBox(height: 8),
-                  Text('No posts yet',
-                      style: TextStyle(color: scheme.onSurfaceVariant)),
-                ],
-              ),
-            ),
-          ),
-      ],
+    return RefreshIndicator(
+      onRefresh: () async {
+        setState(() => _future = _loadPosts());
+        await _future;
+      },
+      child: FutureBuilder<List<post_model.Post>>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snap.hasError) {
+            return Center(
+              child: Text('Could not load posts',
+                  style: TextStyle(color: scheme.onSurfaceVariant)),
+            );
+          }
+          final posts = snap.data ?? const [];
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (club.isMember) ...[
+                _PostComposer(clubName: club.name),
+                const SizedBox(height: 16),
+              ],
+              ...posts.map((p) => _ClubPostCard(post: p)),
+              if (posts.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 48),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Icon(Icons.forum_outlined,
+                            size: 40, color: scheme.onSurfaceVariant),
+                        const SizedBox(height: 8),
+                        Text('No posts yet',
+                            style: TextStyle(color: scheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -786,7 +905,8 @@ class _PostComposer extends StatelessWidget {
           Expanded(
             child: InkWell(
               onTap: () {
-                // Open composer (not implemented in mock)
+                // Compose flow TBD — hook into GroupsProvider.createClubPost
+                // once the composer UI is designed.
               },
               child: Container(
                 padding:
@@ -795,10 +915,8 @@ class _PostComposer extends StatelessWidget {
                   color: scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Text(
-                  'Share to $clubName...',
-                  style: TextStyle(color: scheme.onSurfaceVariant),
-                ),
+                child: Text('Share to $clubName...',
+                    style: TextStyle(color: scheme.onSurfaceVariant)),
               ),
             ),
           ),
@@ -813,7 +931,7 @@ class _PostComposer extends StatelessWidget {
 }
 
 class _ClubPostCard extends StatelessWidget {
-  final Post post;
+  final post_model.Post post;
   const _ClubPostCard({required this.post});
 
   @override
@@ -845,19 +963,14 @@ class _ClubPostCard extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: scheme.primary.withAlpha(100),
-                  shape: BoxShape.circle,
-                ),
+                    color: scheme.primary.withAlpha(100),
+                    shape: BoxShape.circle),
                 child: Center(
-                  child: Text(
-                    initials,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      color: scheme.onSurface,
-                    ),
-                  ),
-                ),
+                    child: Text(initials,
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: scheme.onSurface))),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -869,13 +982,11 @@ class _ClubPostCard extends StatelessWidget {
                             .textTheme
                             .titleSmall
                             ?.copyWith(fontWeight: FontWeight.w600)),
-                    Text(
-                      _relativeTime(post.createdAt),
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: scheme.onSurfaceVariant),
-                    ),
+                    Text(_relativeTime(post.createdAt),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant)),
                   ],
                 ),
               ),
@@ -890,27 +1001,15 @@ class _ClubPostCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              Icon(
-                post.userLiked == true
-                    ? Icons.favorite
-                    : Icons.favorite_outline,
-                size: 20,
-                color: post.userLiked == true
-                    ? Colors.red
-                    : scheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: 4),
-              Text('${post.likes}',
-                  style: Theme.of(context).textTheme.bodySmall),
+              _LikeTap(post: post, isLike: true),
+              const SizedBox(width: 24),
+              _LikeTap(post: post, isLike: false),
               const SizedBox(width: 24),
               Icon(Icons.mode_comment_outlined,
                   size: 20, color: scheme.onSurfaceVariant),
               const SizedBox(width: 4),
               Text('${post.commentCount}',
                   style: Theme.of(context).textTheme.bodySmall),
-              const Spacer(),
-              Icon(Icons.share_outlined,
-                  size: 20, color: scheme.onSurfaceVariant),
             ],
           ),
         ],
@@ -932,14 +1031,67 @@ class _ClubPostCard extends StatelessWidget {
   }
 }
 
+class _LikeTap extends StatelessWidget {
+  final post_model.Post post;
+  final bool isLike;
+  const _LikeTap({required this.post, required this.isLike});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final active =
+        isLike ? post.userLiked == true : post.userLiked == false;
+    final count = isLike ? post.likes : post.dislikes;
+    return GestureDetector(
+      onTap: () => context
+          .read<GroupsProvider>()
+          .likePost(post.kind, post.id, isLike),
+      child: Row(children: [
+        Icon(
+          isLike
+              ? (active ? Icons.favorite : Icons.favorite_outline)
+              : (active ? Icons.thumb_down : Icons.thumb_down_outlined),
+          size: 20,
+          color: active
+              ? (isLike ? Colors.red : Colors.blue)
+              : scheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 4),
+        Text('$count', style: Theme.of(context).textTheme.bodySmall),
+      ]),
+    );
+  }
+}
+
 // ============ CHALLENGES TAB ============
 
-class _ClubChallengesTab extends StatelessWidget {
+class _ClubChallengesTab extends StatefulWidget {
   final Club club;
   const _ClubChallengesTab({required this.club});
 
   @override
+  State<_ClubChallengesTab> createState() => _ClubChallengesTabState();
+}
+
+class _ClubChallengesTabState extends State<_ClubChallengesTab> {
+  late Future<List<Challenge>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<List<Challenge>> _load() {
+    if (!widget.club.canViewChallenges) return Future.value(const []);
+    return context
+        .read<ClubApiService>()
+        .getActiveChallenges(widget.club.id);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final club = widget.club;
     if (!club.canViewChallenges) {
       return const _LockedSection(
         icon: Icons.emoji_events_outlined,
@@ -947,28 +1099,41 @@ class _ClubChallengesTab extends StatelessWidget {
         detail: 'Join this club to see and compete in its challenges.',
       );
     }
-    final challenges = MockClubData.challengesForClub(club.id);
     final scheme = Theme.of(context).colorScheme;
 
-    if (challenges.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.emoji_events_outlined,
-                size: 48, color: scheme.onSurfaceVariant),
-            const SizedBox(height: 12),
-            Text('No challenges yet',
-                style: TextStyle(color: scheme.onSurfaceVariant)),
-          ],
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: challenges.length,
-      itemBuilder: (context, i) => _ChallengeCard(challenge: challenges[i]),
+    return FutureBuilder<List<Challenge>>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snap.hasError) {
+          return Center(
+              child: Text('Could not load challenges',
+                  style: TextStyle(color: scheme.onSurfaceVariant)));
+        }
+        final challenges = snap.data ?? const [];
+        if (challenges.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.emoji_events_outlined,
+                    size: 48, color: scheme.onSurfaceVariant),
+                const SizedBox(height: 12),
+                Text('No challenges yet',
+                    style: TextStyle(color: scheme.onSurfaceVariant)),
+              ],
+            ),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: challenges.length,
+          itemBuilder: (context, i) =>
+              _ChallengeCard(challenge: challenges[i]),
+        );
+      },
     );
   }
 }
@@ -1042,16 +1207,13 @@ class _ChallengeCard extends StatelessWidget {
           ),
           if (challenge.description != null) ...[
             const SizedBox(height: 4),
-            Text(
-              challenge.description!,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: scheme.onSurfaceVariant),
-            ),
+            Text(challenge.description!,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant)),
           ],
           const SizedBox(height: 12),
-          // Progress bar (only for subscribed)
           if (challenge.isSubscribed) ...[
             Row(
               children: [
@@ -1098,7 +1260,11 @@ class _ChallengeCard extends StatelessWidget {
               const Spacer(),
               if (challenge.isSubscribed)
                 OutlinedButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    context
+                        .read<ClubApiService>()
+                        .unsubscribeChallenge(challenge.id);
+                  },
                   style: OutlinedButton.styleFrom(
                     foregroundColor: scheme.onSurfaceVariant,
                     side: BorderSide(color: scheme.outlineVariant),
@@ -1109,7 +1275,11 @@ class _ChallengeCard extends StatelessWidget {
                 )
               else
                 ElevatedButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    context
+                        .read<ClubApiService>()
+                        .subscribeChallenge(challenge.id);
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: scheme.primary,
                     foregroundColor: Colors.white,
@@ -1143,72 +1313,100 @@ class _ChallengeCard extends StatelessWidget {
 
 // ============ MEMBERS TAB ============
 
-class _ClubMembersTab extends StatelessWidget {
+class _ClubMembersTab extends StatefulWidget {
   final Club club;
   const _ClubMembersTab({required this.club});
 
   @override
+  State<_ClubMembersTab> createState() => _ClubMembersTabState();
+}
+
+class _ClubMembersTabState extends State<_ClubMembersTab> {
+  late Future<List<ClubMember>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<List<ClubMember>> _load() {
+    if (!widget.club.canViewMembers) return Future.value(const []);
+    return context.read<ClubApiService>().getMembers(widget.club.id);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final club = widget.club;
     if (!club.canViewMembers) {
       return const _LockedSection(
         icon: Icons.people_outline,
         label: 'Members are private',
-        detail: 'Join this club to see who\'s in it.',
+        detail: "Join this club to see who's in it.",
       );
     }
-    final members = MockClubData.membersForClub(club.id);
     final scheme = Theme.of(context).colorScheme;
 
-    // Sort: OWNER first, then ADMIN, then MEMBER
-    members.sort((a, b) {
-      const order = {'OWNER': 0, 'ADMIN': 1, 'MEMBER': 2};
-      return (order[a.role] ?? 3).compareTo(order[b.role] ?? 3);
-    });
-
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: members.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, i) {
-        final m = members[i];
-        final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
-        return Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: cardColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: scheme.outlineVariant),
-          ),
-          child: Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: scheme.primary.withAlpha(30),
-                child: Text(
-                  m.name.isNotEmpty ? m.name[0] : '?',
-                  style: TextStyle(
-                      color: scheme.primary, fontWeight: FontWeight.w600),
-                ),
+    return FutureBuilder<List<ClubMember>>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snap.hasError) {
+          return Center(
+              child: Text('Could not load members',
+                  style: TextStyle(color: scheme.onSurfaceVariant)));
+        }
+        final members = [...(snap.data ?? const <ClubMember>[])];
+        members.sort((a, b) => a.role.index.compareTo(b.role.index));
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: members.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
+          itemBuilder: (context, i) {
+            final m = members[i];
+            final cardColor =
+                Theme.of(context).cardTheme.color ?? scheme.surface;
+            return Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: cardColor,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: scheme.outlineVariant),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(m.name,
-                        style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: scheme.onSurface)),
-                    Text(
-                      m.email,
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: scheme.primary.withAlpha(30),
+                    child: Text(
+                      m.name.isNotEmpty ? m.name[0] : '?',
                       style: TextStyle(
-                          fontSize: 12, color: scheme.onSurfaceVariant),
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w600),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(m.name,
+                            style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: scheme.onSurface)),
+                        Text(m.email,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                  _RoleBadge(role: m.role),
+                ],
               ),
-              _RoleBadge(role: m.role),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -1216,28 +1414,28 @@ class _ClubMembersTab extends StatelessWidget {
 }
 
 class _RoleBadge extends StatelessWidget {
-  final String role;
+  final ClubRole role;
   const _RoleBadge({required this.role});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final (bg, fg, label) = switch (role) {
-      'OWNER' => (Colors.amber.withAlpha(40), Colors.amber.shade800, 'OWNER'),
-      'ADMIN' => (
-          scheme.primary.withAlpha(30),
-          scheme.primary,
-          'ADMIN'
+      ClubRole.owner =>
+        (Colors.amber.withAlpha(40), Colors.amber.shade800, 'OWNER'),
+      ClubRole.admin =>
+        (scheme.primary.withAlpha(30), scheme.primary, 'ADMIN'),
+      ClubRole.member => (
+          scheme.surfaceContainerHighest,
+          scheme.onSurfaceVariant,
+          'MEMBER'
         ),
-      _ => (scheme.surfaceContainerHighest, scheme.onSurfaceVariant, 'MEMBER'),
     };
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(6),
-      ),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
       child: Text(
         label,
         style: TextStyle(
@@ -1251,9 +1449,6 @@ class _RoleBadge extends StatelessWidget {
   }
 }
 
-/// Placeholder shown in a tab when the current user isn't allowed to see
-/// its contents (private club, non-member, owner hasn't opened up the
-/// section via visibility settings).
 class _LockedSection extends StatelessWidget {
   final IconData icon;
   final String label;

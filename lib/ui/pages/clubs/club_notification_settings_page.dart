@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/models/club.dart';
+import 'package:trackon_mobile/data/models/club_notification_prefs.dart';
+import 'package:trackon_mobile/data/services/club_service.dart';
 
 /// Club notification settings. Everyone (owner/admin/member) gets the
 /// top-level "allow notifications" + push + per-trigger toggles. Owners
 /// and admins additionally get moderation-related triggers (join
 /// requests, post approval requests).
 ///
-/// Push permission is gated on the OS-level notification permission —
-/// if the system hasn't granted it, the in-club push toggle is read-only
-/// and we show a warning pointing to system settings.
+/// Prefs are lazy-created server-side on first GET, so the very first
+/// render of this page for a given (user, club) pair triggers the
+/// insert. Each toggle PUTs its own change — no Save button.
 class ClubNotificationSettingsPage extends StatefulWidget {
   final Club club;
   const ClubNotificationSettingsPage({super.key, required this.club});
@@ -20,56 +23,123 @@ class ClubNotificationSettingsPage extends StatefulWidget {
 
 class _ClubNotificationSettingsPageState
     extends State<ClubNotificationSettingsPage> {
-  // Master: notifications in general (in-app badge + push together).
-  bool _allowNotifications = false;
-  // Nested under master: actually deliver as system push.
-  bool _allowPush = false;
+  late Future<ClubNotificationPrefs> _future;
+  ClubNotificationPrefs? _prefs;
+  bool _saving = false;
 
-  // Granular triggers
-  String _postsFrom = 'ALL'; // ALL / STAFF_ONLY / NONE
-  bool _challengeStarted = true;
-  bool _challengeEndingSoon = true;
-  bool _challengeResults = true;
-  bool _mentionsInPosts = true;
-
-  // Admin/owner-only triggers
-  bool _joinRequests = true;
-  bool _postApprovalRequests = true;
-
-  // Mock OS-level push permission. Flip this in debug to preview the
-  // "permission denied" UX. Real wiring will read from PermissionProvider.
+  /// Mock OS-level push permission. Flip in debug to preview the
+  /// "permission denied" UX. Real wiring will read from
+  /// PermissionProvider once a PUSH permission enum value is added.
   static const bool _osPushGranted = false;
 
   bool get _isStaff =>
-      widget.club.userRole == 'OWNER' || widget.club.userRole == 'ADMIN';
+      widget.club.userRole == ClubRole.owner ||
+      widget.club.userRole == ClubRole.admin;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<ClubNotificationPrefs> _load() async {
+    final prefs = await context
+        .read<ClubApiService>()
+        .getNotificationPrefs(widget.club.id);
+    _prefs = prefs;
+    return prefs;
+  }
+
+  /// Each toggle calls this immediately on change. Fire-and-forget feel
+  /// — the UI updates optimistically via setState first, then the PUT
+  /// confirms. Rolling back on failure would be churn; we show an
+  /// error SnackBar and let the user retry.
+  Future<void> _save(Map<String, dynamic> patch,
+      ClubNotificationPrefs optimistic) async {
+    setState(() {
+      _prefs = optimistic;
+      _saving = true;
+    });
+    try {
+      final updated = await context
+          .read<ClubApiService>()
+          .updateNotificationPrefs(widget.club.id, patch);
+      if (!mounted) return;
+      setState(() => _prefs = updated);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not save change')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return Scaffold(
       appBar: AppBar(title: const Text('Notification Settings')),
-      body: ListView(
+      body: FutureBuilder<ClubNotificationPrefs>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snap.hasError || _prefs == null) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('Could not load settings'),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => setState(() => _future = _load()),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
+          }
+          return _buildBody();
+        },
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    final scheme = Theme.of(context).colorScheme;
+    final p = _prefs!;
+
+    return AbsorbPointer(
+      absorbing: _saving,
+      child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           // Master toggle
           _SwitchTile(
             title: 'Allow notifications',
             subtitle: 'Get in-app activity from ${widget.club.name}.',
-            value: _allowNotifications,
-            onChanged: (v) => setState(() {
-              _allowNotifications = v;
-              if (!v) _allowPush = false;
-            }),
+            value: p.allowNotifications,
+            onChanged: (v) {
+              // Master off drags push off too so the dispatcher only
+              // needs to check the master flag.
+              final optimistic = _copyWith(p,
+                  allowNotifications: v, allowPush: v ? p.allowPush : false);
+              _save(
+                ClubNotificationPrefs.patch(
+                  allowNotifications: v,
+                  allowPush: v ? null : false,
+                ),
+                optimistic,
+              );
+            },
           ),
-
-          // Everything below is only relevant once notifications are on.
           AnimatedSize(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeOut,
             alignment: Alignment.topCenter,
-            child: _allowNotifications
-                ? _buildEnabledSections(scheme)
+            child: p.allowNotifications
+                ? _buildEnabledSections(scheme, p)
                 : const SizedBox.shrink(),
           ),
         ],
@@ -77,7 +147,7 @@ class _ClubNotificationSettingsPageState
     );
   }
 
-  Widget _buildEnabledSections(ColorScheme scheme) {
+  Widget _buildEnabledSections(ColorScheme scheme, ClubNotificationPrefs p) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -86,9 +156,12 @@ class _ClubNotificationSettingsPageState
           title: 'Send as push',
           subtitle:
               'Deliver as a system push notification, not just in-app.',
-          value: _allowPush,
+          value: p.allowPush,
           enabled: _osPushGranted,
-          onChanged: (v) => setState(() => _allowPush = v),
+          onChanged: (v) => _save(
+            ClubNotificationPrefs.patch(allowPush: v),
+            _copyWith(p, allowPush: v),
+          ),
         ),
         if (!_osPushGranted) ...[
           const SizedBox(height: 6),
@@ -100,63 +173,107 @@ class _ClubNotificationSettingsPageState
         _SectionLabel(label: 'Posts'),
         _ChoiceTile(
           title: 'Notify me about posts',
-          value: _postsFrom,
-          options: const [
-            ('ALL', 'All members'),
-            ('STAFF_ONLY', 'Admins & owner only'),
-            ('NONE', 'None'),
-          ],
-          onChanged: (v) => setState(() => _postsFrom = v),
+          value: p.postsFrom,
+          onChanged: (v) => _save(
+            ClubNotificationPrefs.patch(postsFrom: v),
+            _copyWith(p, postsFrom: v),
+          ),
         ),
         const SizedBox(height: 8),
         _SwitchTile(
           title: 'Mentions',
           subtitle: 'Notify me when someone @mentions me in a post.',
-          value: _mentionsInPosts,
-          onChanged: (v) => setState(() => _mentionsInPosts = v),
+          value: p.mentions,
+          onChanged: (v) => _save(
+            ClubNotificationPrefs.patch(mentions: v),
+            _copyWith(p, mentions: v),
+          ),
         ),
         const SizedBox(height: 20),
         _SectionLabel(label: 'Challenges'),
         _SwitchTile(
           title: 'New challenges',
           subtitle: 'When a challenge is launched in this club.',
-          value: _challengeStarted,
-          onChanged: (v) => setState(() => _challengeStarted = v),
+          value: p.challengeStarted,
+          onChanged: (v) => _save(
+            ClubNotificationPrefs.patch(challengeStarted: v),
+            _copyWith(p, challengeStarted: v),
+          ),
         ),
         const SizedBox(height: 8),
         _SwitchTile(
           title: 'Ending soon',
-          subtitle: 'Reminder 24 hours before a challenge you\'ve joined ends.',
-          value: _challengeEndingSoon,
-          onChanged: (v) => setState(() => _challengeEndingSoon = v),
+          subtitle:
+              "Reminder 24 hours before a challenge you've joined ends.",
+          value: p.challengeEndingSoon,
+          onChanged: (v) => _save(
+            ClubNotificationPrefs.patch(challengeEndingSoon: v),
+            _copyWith(p, challengeEndingSoon: v),
+          ),
         ),
         const SizedBox(height: 8),
         _SwitchTile(
           title: 'Results & rankings',
           subtitle: 'When a challenge ends and results are posted.',
-          value: _challengeResults,
-          onChanged: (v) => setState(() => _challengeResults = v),
+          value: p.challengeResults,
+          onChanged: (v) => _save(
+            ClubNotificationPrefs.patch(challengeResults: v),
+            _copyWith(p, challengeResults: v),
+          ),
         ),
         if (_isStaff) ...[
           const SizedBox(height: 20),
           _SectionLabel(label: 'Moderation (admins)'),
           _SwitchTile(
             title: 'Join requests',
-            subtitle: 'Notify me when someone asks to join this private club.',
-            value: _joinRequests,
-            onChanged: (v) => setState(() => _joinRequests = v),
+            subtitle:
+                'Notify me when someone asks to join this private club.',
+            value: p.joinRequests,
+            onChanged: (v) => _save(
+              ClubNotificationPrefs.patch(joinRequests: v),
+              _copyWith(p, joinRequests: v),
+            ),
           ),
           const SizedBox(height: 8),
           _SwitchTile(
             title: 'Posts awaiting approval',
             subtitle: 'Notify me when a member submits a post that '
                 'needs admin review.',
-            value: _postApprovalRequests,
-            onChanged: (v) => setState(() => _postApprovalRequests = v),
+            value: p.postApprovalRequests,
+            onChanged: (v) => _save(
+              ClubNotificationPrefs.patch(postApprovalRequests: v),
+              _copyWith(p, postApprovalRequests: v),
+            ),
           ),
         ],
         const SizedBox(height: 24),
       ],
+    );
+  }
+
+  /// Ad-hoc copyWith — the model doesn't need one outside this page.
+  ClubNotificationPrefs _copyWith(
+    ClubNotificationPrefs p, {
+    bool? allowNotifications,
+    bool? allowPush,
+    PostsFromPref? postsFrom,
+    bool? mentions,
+    bool? challengeStarted,
+    bool? challengeEndingSoon,
+    bool? challengeResults,
+    bool? joinRequests,
+    bool? postApprovalRequests,
+  }) {
+    return ClubNotificationPrefs(
+      allowNotifications: allowNotifications ?? p.allowNotifications,
+      allowPush: allowPush ?? p.allowPush,
+      postsFrom: postsFrom ?? p.postsFrom,
+      mentions: mentions ?? p.mentions,
+      challengeStarted: challengeStarted ?? p.challengeStarted,
+      challengeEndingSoon: challengeEndingSoon ?? p.challengeEndingSoon,
+      challengeResults: challengeResults ?? p.challengeResults,
+      joinRequests: joinRequests ?? p.joinRequests,
+      postApprovalRequests: postApprovalRequests ?? p.postApprovalRequests,
     );
   }
 }
@@ -244,17 +361,23 @@ class _SwitchTile extends StatelessWidget {
   }
 }
 
+/// Segmented picker for the single {@code postsFrom} enum. Options are
+/// baked in so callers don't have to restate them every time.
 class _ChoiceTile extends StatelessWidget {
   final String title;
-  final String value;
-  final List<(String, String)> options;
-  final ValueChanged<String> onChanged;
+  final PostsFromPref value;
+  final ValueChanged<PostsFromPref> onChanged;
   const _ChoiceTile({
     required this.title,
     required this.value,
-    required this.options,
     required this.onChanged,
   });
+
+  static const _options = [
+    (PostsFromPref.all, 'All members'),
+    (PostsFromPref.staffOnly, 'Admins & owner only'),
+    (PostsFromPref.none, 'None'),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -276,10 +399,10 @@ class _ChoiceTile extends StatelessWidget {
           Wrap(
             spacing: 8,
             runSpacing: 6,
-            children: options.map((opt) {
+            children: _options.map((opt) {
               final selected = opt.$1 == value;
               return GestureDetector(
-                onTap: () => onChanged(opt.$1),
+                onTap: selected ? null : () => onChanged(opt.$1),
                 child: Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

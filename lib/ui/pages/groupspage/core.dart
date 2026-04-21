@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:trackon_mobile/data/providers/groups_provider.dart';
 import 'package:trackon_mobile/data/models/club.dart';
+import 'package:trackon_mobile/data/models/ownership_transfer.dart';
 import 'package:trackon_mobile/data/models/post.dart' as post_model;
+import 'package:trackon_mobile/data/providers/groups_provider.dart';
 import 'package:trackon_mobile/ui/pages/clubs/club_detail_page.dart';
-import 'package:trackon_mobile/ui/pages/clubs/mock_clubs.dart';
+import 'package:trackon_mobile/ui/pages/clubs/create_club_page.dart';
 
 class GroupsPage extends StatefulWidget {
   const GroupsPage({super.key});
@@ -27,6 +28,7 @@ class _GroupsPageState extends State<GroupsPage>
       provider.loadMyClubs();
       provider.loadFriends();
       provider.loadIncomingRequests();
+      provider.loadIncomingTransfers();
     });
   }
 
@@ -97,7 +99,8 @@ class FeedTab extends StatelessWidget {
             const SizedBox(height: 12),
             Text('No posts yet', style: TextStyle(color: Colors.grey.shade500)),
             const SizedBox(height: 8),
-            Text('Follow clubs and add friends to see posts', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+            Text('Follow clubs and add friends to see posts',
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
           ],
         ),
       );
@@ -123,7 +126,11 @@ class _PostCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
     final initials = post.authorName.isNotEmpty
-        ? post.authorName.split(' ').map((e) => e.isNotEmpty ? e[0] : '').take(2).join()
+        ? post.authorName
+            .split(' ')
+            .map((e) => e.isNotEmpty ? e[0] : '')
+            .take(2)
+            .join()
         : '?';
 
     return Container(
@@ -140,18 +147,34 @@ class _PostCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(color: scheme.primary.withAlpha(100), shape: BoxShape.circle),
-                child: Center(child: Text(initials, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: scheme.onSurface))),
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                    color: scheme.primary.withAlpha(100),
+                    shape: BoxShape.circle),
+                child: Center(
+                    child: Text(initials,
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: scheme.onSurface))),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(post.authorName, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                    Text(post.authorName,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w600)),
                     if (post.clubName != null)
-                      Text(post.clubName!, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.primary)),
+                      Text(post.clubName!,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: scheme.primary)),
                   ],
                 ),
               ),
@@ -163,35 +186,51 @@ class _PostCard extends StatelessWidget {
           Row(
             children: [
               GestureDetector(
-                onTap: () => context.read<GroupsProvider>().likePost(post.id, true),
+                onTap: () => context
+                    .read<GroupsProvider>()
+                    .likePost(post.kind, post.id, true),
                 child: Row(children: [
                   Icon(
-                    post.userLiked == true ? Icons.favorite : Icons.favorite_outline,
+                    post.userLiked == true
+                        ? Icons.favorite
+                        : Icons.favorite_outline,
                     size: 20,
-                    color: post.userLiked == true ? Colors.red : scheme.onSurfaceVariant,
+                    color: post.userLiked == true
+                        ? Colors.red
+                        : scheme.onSurfaceVariant,
                   ),
                   const SizedBox(width: 4),
-                  Text('${post.likes}', style: Theme.of(context).textTheme.bodySmall),
+                  Text('${post.likes}',
+                      style: Theme.of(context).textTheme.bodySmall),
                 ]),
               ),
               const SizedBox(width: 24),
               GestureDetector(
-                onTap: () => context.read<GroupsProvider>().likePost(post.id, false),
+                onTap: () => context
+                    .read<GroupsProvider>()
+                    .likePost(post.kind, post.id, false),
                 child: Row(children: [
                   Icon(
-                    post.userLiked == false ? Icons.thumb_down : Icons.thumb_down_outlined,
+                    post.userLiked == false
+                        ? Icons.thumb_down
+                        : Icons.thumb_down_outlined,
                     size: 20,
-                    color: post.userLiked == false ? Colors.blue : scheme.onSurfaceVariant,
+                    color: post.userLiked == false
+                        ? Colors.blue
+                        : scheme.onSurfaceVariant,
                   ),
                   const SizedBox(width: 4),
-                  Text('${post.dislikes}', style: Theme.of(context).textTheme.bodySmall),
+                  Text('${post.dislikes}',
+                      style: Theme.of(context).textTheme.bodySmall),
                 ]),
               ),
               const SizedBox(width: 24),
               Row(children: [
-                Icon(Icons.mode_comment_outlined, size: 20, color: scheme.onSurfaceVariant),
+                Icon(Icons.mode_comment_outlined,
+                    size: 20, color: scheme.onSurfaceVariant),
                 const SizedBox(width: 4),
-                Text('${post.commentCount}', style: Theme.of(context).textTheme.bodySmall),
+                Text('${post.commentCount}',
+                    style: Theme.of(context).textTheme.bodySmall),
               ]),
             ],
           ),
@@ -219,14 +258,15 @@ class _ClubsTabState extends State<ClubsTab> {
     final isSearching = _searchController.text.isNotEmpty;
     final scheme = Theme.of(context).colorScheme;
 
-    // Mock-sourced groupings while the backend isn't wired up.
-    final owned = MockClubData.ownedClubs;
-    final admin = MockClubData.adminClubs;
-    final member = MockClubData.memberClubs;
-    final recommended = MockClubData.recommendedClubs;
+    final my = provider.myClubs;
 
     return Column(
       children: [
+        // Pending-ownership-transfer banners (inbox). Shown above the
+        // search so users notice before drilling into any club.
+        if (provider.incomingTransfers.isNotEmpty && !isSearching)
+          _PendingTransfersBanner(
+              transfers: provider.incomingTransfers, provider: provider),
         Padding(
           padding: const EdgeInsets.all(16),
           child: TextField(
@@ -238,7 +278,8 @@ class _ClubsTabState extends State<ClubsTab> {
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(color: scheme.outlineVariant),
               ),
-              contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+              contentPadding:
+                  const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
             ),
             onChanged: (query) {
               if (query.isNotEmpty) provider.searchClubs(query);
@@ -249,53 +290,59 @@ class _ClubsTabState extends State<ClubsTab> {
         Expanded(
           child: isSearching
               ? _buildSearchResults(provider, scheme)
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  children: [
-                    if (owned.isNotEmpty) ...[
-                      _ClubSectionHeader(
+              : RefreshIndicator(
+                  onRefresh: () => provider.loadMyClubs(),
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    children: [
+                      // Empty state: hero banner encouraging creation.
+                      // With clubs: a compact tile at the top of the
+                      // list so creation is always one tap away.
+                      if (my.isEmpty)
+                        const _CreateClubEmptyBanner()
+                      else
+                        const _CreateClubTile(),
+                      if (my.owned.isNotEmpty) ...[
+                        _ClubSectionHeader(
                           title: 'My Clubs',
                           subtitle: 'Clubs you created',
-                          count: owned.length),
-                      ...owned.map((c) => _ClubRowCard(club: c)),
-                      const SizedBox(height: 16),
-                    ],
-                    if (admin.isNotEmpty) ...[
-                      _ClubSectionHeader(
+                          count: my.owned.length,
+                        ),
+                        ...my.owned.map((c) => _ClubRowCard(club: c)),
+                        const SizedBox(height: 16),
+                      ],
+                      if (my.admin.isNotEmpty) ...[
+                        _ClubSectionHeader(
                           title: 'Admin of',
                           subtitle: 'Clubs you help manage',
-                          count: admin.length),
-                      ...admin.map((c) => _ClubRowCard(club: c)),
-                      const SizedBox(height: 16),
-                    ],
-                    if (member.isNotEmpty) ...[
-                      _ClubSectionHeader(
-                          title: 'Joined',
-                          subtitle: 'Clubs you\'re a member of',
-                          count: member.length),
-                      ...member.map((c) => _ClubRowCard(club: c)),
-                      const SizedBox(height: 16),
-                    ],
-                    if (recommended.isNotEmpty) ...[
-                      _ClubSectionHeader(
-                          title: 'Recommended',
-                          subtitle: 'Clubs you might like',
-                          count: recommended.length),
-                      ...recommended.map((c) => _ClubRowCard(club: c)),
-                    ],
-                    if (owned.isEmpty &&
-                        admin.isEmpty &&
-                        member.isEmpty &&
-                        recommended.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 80),
-                        child: Center(
-                          child: Text('No clubs yet',
-                              style: TextStyle(
-                                  color: scheme.onSurfaceVariant)),
+                          count: my.admin.length,
                         ),
-                      ),
-                  ],
+                        ...my.admin.map((c) => _ClubRowCard(club: c)),
+                        const SizedBox(height: 16),
+                      ],
+                      if (my.member.isNotEmpty) ...[
+                        _ClubSectionHeader(
+                          title: 'Joined',
+                          subtitle: "Clubs you're a member of",
+                          count: my.member.length,
+                        ),
+                        ...my.member.map((c) => _ClubRowCard(club: c)),
+                        const SizedBox(height: 16),
+                      ],
+                      if (my.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 16),
+                          child: Center(
+                            child: Text(
+                              'Or search to find existing clubs to join',
+                              style: TextStyle(
+                                  color: scheme.onSurfaceVariant,
+                                  fontSize: 12),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
         ),
       ],
@@ -303,14 +350,7 @@ class _ClubsTabState extends State<ClubsTab> {
   }
 
   Widget _buildSearchResults(GroupsProvider provider, ColorScheme scheme) {
-    final query = _searchController.text.toLowerCase().trim();
-    // Client-side mock filter: match name or handle across all sections.
-    final mockResults = MockClubData.clubs.where((c) {
-      return c.name.toLowerCase().contains(query) ||
-          c.handle.toLowerCase().contains(query);
-    }).toList();
-    final results = [...provider.searchedClubs, ...mockResults];
-
+    final results = provider.searchedClubs;
     if (results.isEmpty) {
       return Center(
         child: Text('No clubs found',
@@ -328,6 +368,219 @@ class _ClubsTabState extends State<ClubsTab> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+}
+
+/// Banner surfacing pending ownership transfers addressed to the user.
+/// Tapping a row opens the accept/decline dialog; both actions flow
+/// through GroupsProvider so `myClubs` refreshes on accept.
+class _PendingTransfersBanner extends StatelessWidget {
+  final List<OwnershipTransfer> transfers;
+  final GroupsProvider provider;
+  const _PendingTransfersBanner(
+      {required this.transfers, required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Column(
+        children: transfers.map((t) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: scheme.primary.withAlpha(20),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: scheme.primary.withAlpha(80)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.swap_horiz, color: scheme.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${t.fromUserName} wants to transfer ownership of '
+                    '${t.clubName} to you',
+                    style: TextStyle(
+                        fontSize: 13, color: scheme.onSurface),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => _confirm(context, t, accept: false),
+                  child: const Text('Decline',
+                      style: TextStyle(color: Colors.red)),
+                ),
+                TextButton(
+                  onPressed: () => _confirm(context, t, accept: true),
+                  child: Text('Accept',
+                      style: TextStyle(color: scheme.primary)),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Future<void> _confirm(BuildContext context, OwnershipTransfer t,
+      {required bool accept}) async {
+    try {
+      if (accept) {
+        await provider.acceptTransfer(t.clubId);
+      } else {
+        await provider.declineTransfer(t.clubId);
+      }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(accept
+              ? 'You now own ${t.clubName}'
+              : 'Declined ownership of ${t.clubName}')));
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Something went wrong')));
+    }
+  }
+}
+
+/// Full-width gradient hero for first-time users — shown in place of
+/// any sections when [MyClubs.isEmpty]. Tapping anywhere on the card
+/// navigates to [CreateClubPage].
+class _CreateClubEmptyBanner extends StatelessWidget {
+  const _CreateClubEmptyBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 16, 0, 20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const CreateClubPage()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                scheme.primary,
+                scheme.primary.withAlpha(180),
+              ],
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.auto_awesome,
+                      color: Colors.white, size: 20),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Start your own club',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Bring people together around your sport, your pace, '
+                'your schedule.',
+                style: TextStyle(
+                    color: Colors.white.withAlpha(220),
+                    fontSize: 13,
+                    height: 1.35),
+              ),
+              const SizedBox(height: 14),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.add, size: 16, color: scheme.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Create a club',
+                        style: TextStyle(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact "+ Create a new club" tile shown at the top of the list
+/// when the user already has at least one club — a quiet, always-
+/// available entry point.
+class _CreateClubTile extends StatelessWidget {
+  const _CreateClubTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const CreateClubPage()),
+        ),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: scheme.primary.withAlpha(15),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: scheme.primary.withAlpha(70)),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.add, color: scheme.primary),
+              const SizedBox(width: 10),
+              Text(
+                'Create a new club',
+                style: TextStyle(
+                    color: scheme.primary, fontWeight: FontWeight.w700),
+              ),
+              const Spacer(),
+              Icon(Icons.chevron_right, color: scheme.primary),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -403,7 +656,7 @@ class _ClubRowCard extends StatelessWidget {
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => ClubDetailPage(club: club)),
+        MaterialPageRoute(builder: (_) => ClubDetailPage(clubId: club.id)),
       ),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
@@ -454,7 +707,7 @@ class _ClubRowCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${club.handle}  ·  ${club.memberCount} members',
+                    '@${club.handle}  ·  ${club.memberCount} members',
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
@@ -475,8 +728,9 @@ class _ClubRowCard extends StatelessWidget {
   }
 }
 
-/// Compact join / request button used in the club list rows. Swaps copy,
-/// color, and enabled state based on the club's privacy and pending state.
+/// Compact join / request button. Dispatches to the right provider
+/// method based on the club's privacy; disabled + relabeled while a
+/// request is pending.
 class _JoinOrRequestButton extends StatelessWidget {
   final Club club;
   final GroupsProvider provider;
@@ -492,8 +746,8 @@ class _JoinOrRequestButton extends StatelessWidget {
         style: OutlinedButton.styleFrom(
           disabledForegroundColor: scheme.onSurfaceVariant,
           side: BorderSide(color: scheme.outlineVariant),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
         child: const Text('Requested'),
       );
@@ -501,7 +755,7 @@ class _JoinOrRequestButton extends StatelessWidget {
 
     final label = club.isPublic ? 'Join' : 'Request';
     return ElevatedButton(
-      onPressed: () => provider.joinClub(club.id),
+      onPressed: () => _onPressed(context),
       style: ElevatedButton.styleFrom(
         backgroundColor: scheme.primary,
         shape:
@@ -510,19 +764,46 @@ class _JoinOrRequestButton extends StatelessWidget {
       child: Text(label, style: const TextStyle(color: Colors.white)),
     );
   }
+
+  Future<void> _onPressed(BuildContext context) async {
+    try {
+      if (club.isPublic) {
+        await provider.joinClub(club.id);
+      } else {
+        await provider.requestJoinClub(club.id);
+      }
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Something went wrong')),
+      );
+    }
+  }
 }
 
 class _InlineRoleBadge extends StatelessWidget {
-  final String role;
+  final ClubRole role;
   const _InlineRoleBadge({required this.role});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final (bg, fg, label) = switch (role) {
-      'OWNER' => (Colors.amber.withAlpha(40), Colors.amber.shade800, 'OWNER'),
-      'ADMIN' => (scheme.primary.withAlpha(30), scheme.primary, 'ADMIN'),
-      _ => (scheme.surfaceContainerHighest, scheme.onSurfaceVariant, 'MEMBER'),
+      ClubRole.owner => (
+          Colors.amber.withAlpha(40),
+          Colors.amber.shade800,
+          'OWNER'
+        ),
+      ClubRole.admin => (
+          scheme.primary.withAlpha(30),
+          scheme.primary,
+          'ADMIN'
+        ),
+      ClubRole.member => (
+          scheme.surfaceContainerHighest,
+          scheme.onSurfaceVariant,
+          'MEMBER'
+        ),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
@@ -567,8 +848,11 @@ class _FriendsTabState extends State<FriendsTab> {
             decoration: InputDecoration(
               hintText: 'Search users...',
               prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-              contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade300)),
+              contentPadding:
+                  const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
             ),
             onChanged: (query) {
               if (query.isNotEmpty) provider.searchUsers(query);
@@ -583,20 +867,37 @@ class _FriendsTabState extends State<FriendsTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Friend Requests', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                Text('Friend Requests',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 ...provider.incomingRequests.map((req) => Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: Colors.orange.withAlpha(20), borderRadius: BorderRadius.circular(12)),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text(req.friendName.isNotEmpty ? req.friendName : req.friendEmail)),
-                      IconButton(onPressed: () => provider.acceptRequest(req.friendshipId), icon: const Icon(Icons.check, color: Colors.green)),
-                      IconButton(onPressed: () => provider.rejectRequest(req.friendshipId), icon: const Icon(Icons.close, color: Colors.red)),
-                    ],
-                  ),
-                )),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                          color: Colors.orange.withAlpha(20),
+                          borderRadius: BorderRadius.circular(12)),
+                      child: Row(
+                        children: [
+                          Expanded(
+                              child: Text(req.friendName.isNotEmpty
+                                  ? req.friendName
+                                  : req.friendEmail)),
+                          IconButton(
+                              onPressed: () =>
+                                  provider.acceptRequest(req.friendshipId),
+                              icon: const Icon(Icons.check,
+                                  color: Colors.green)),
+                          IconButton(
+                              onPressed: () =>
+                                  provider.rejectRequest(req.friendshipId),
+                              icon:
+                                  const Icon(Icons.close, color: Colors.red)),
+                        ],
+                      ),
+                    )),
                 const SizedBox(height: 8),
               ],
             ),
@@ -612,7 +913,11 @@ class _FriendsTabState extends State<FriendsTab> {
 
   Widget _buildSearchResults(GroupsProvider provider) {
     final results = provider.searchedUsers;
-    if (results.isEmpty) return const Center(child: Text('No users found', style: TextStyle(color: Colors.grey)));
+    if (results.isEmpty) {
+      return const Center(
+          child: Text('No users found',
+              style: TextStyle(color: Colors.grey)));
+    }
     final scheme = Theme.of(context).colorScheme;
     final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
     return ListView.builder(
@@ -623,22 +928,40 @@ class _FriendsTabState extends State<FriendsTab> {
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(12), border: Border.all(color: scheme.outlineVariant)),
+          decoration: BoxDecoration(
+              color: cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: scheme.outlineVariant)),
           child: Row(
             children: [
-              CircleAvatar(backgroundColor: scheme.primary.withAlpha(30),
-                child: Text(user.fullName.isNotEmpty ? user.fullName[0] : '?', style: TextStyle(color: scheme.primary))),
+              CircleAvatar(
+                  backgroundColor: scheme.primary.withAlpha(30),
+                  child: Text(
+                      user.fullName.isNotEmpty ? user.fullName[0] : '?',
+                      style: TextStyle(color: scheme.primary))),
               const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(user.fullName, style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onSurface)),
-                Text(user.email, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-              ])),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(user.fullName,
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurface)),
+                    Text(user.email,
+                        style: TextStyle(
+                            fontSize: 12, color: scheme.onSurfaceVariant)),
+                  ])),
               ElevatedButton(
                 onPressed: () {
                   provider.sendFriendRequest(user.email);
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Request sent to ${user.fullName}')));
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text('Request sent to ${user.fullName}')));
                 },
-                style: ElevatedButton.styleFrom(backgroundColor: scheme.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: scheme.primary,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8))),
                 child: const Text('Add', style: TextStyle(color: Colors.white)),
               ),
             ],
@@ -652,13 +975,19 @@ class _FriendsTabState extends State<FriendsTab> {
     final friends = provider.friends;
     if (friends.isEmpty) {
       return Center(
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(Icons.people_outline, size: 48, color: Colors.grey.shade300),
-          const SizedBox(height: 12),
-          Text('No friends yet', style: TextStyle(color: Colors.grey.shade500)),
-          const SizedBox(height: 4),
-          Text('Search for users above', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
-        ]),
+        child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.people_outline,
+                  size: 48, color: Colors.grey.shade300),
+              const SizedBox(height: 12),
+              Text('No friends yet',
+                  style: TextStyle(color: Colors.grey.shade500)),
+              const SizedBox(height: 4),
+              Text('Search for users above',
+                  style:
+                      TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+            ]),
       );
     }
     final scheme = Theme.of(context).colorScheme;
@@ -671,16 +1000,35 @@ class _FriendsTabState extends State<FriendsTab> {
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(12), border: Border.all(color: scheme.outlineVariant)),
+          decoration: BoxDecoration(
+              color: cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: scheme.outlineVariant)),
           child: Row(
             children: [
-              CircleAvatar(backgroundColor: scheme.primary.withAlpha(30),
-                child: Text(friend.friendName.isNotEmpty ? friend.friendName[0] : '?', style: TextStyle(color: scheme.primary))),
+              CircleAvatar(
+                  backgroundColor: scheme.primary.withAlpha(30),
+                  child: Text(
+                      friend.friendName.isNotEmpty
+                          ? friend.friendName[0]
+                          : '?',
+                      style: TextStyle(color: scheme.primary))),
               const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(friend.friendName.isNotEmpty ? friend.friendName : friend.friendEmail, style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onSurface)),
-                Text(friend.friendEmail, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-              ])),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(
+                        friend.friendName.isNotEmpty
+                            ? friend.friendName
+                            : friend.friendEmail,
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurface)),
+                    Text(friend.friendEmail,
+                        style: TextStyle(
+                            fontSize: 12, color: scheme.onSurfaceVariant)),
+                  ])),
               Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
             ],
           ),

@@ -23,8 +23,10 @@ import 'data/services/location_tracker.dart';
 import 'data/services/workout_library_service.dart';
 import 'data/services/workout_service.dart';
 import 'data/services/friendship_service.dart';
+import 'data/services/club_post_service.dart';
 import 'data/services/club_service.dart';
 import 'data/services/post_service.dart';
+import 'data/services/user_post_service.dart';
 import 'data/services/notification_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
@@ -55,11 +57,25 @@ Future<void> main() async {
   apiClient.connectivityProvider = connectivityProvider;
   connectivityProvider.start();
 
+  // Stateless service singletons. Exposed at the top level so pages
+  // with local state (club detail, settings, notification prefs) can
+  // call the API directly without proxying through a ChangeNotifier.
+  final clubApiService = ClubApiService(apiClient);
+  final clubPostApiService = ClubPostApiService(apiClient);
+  final userPostApiService = UserPostApiService(apiClient);
+  final postApiService = PostApiService(apiClient);
+  final friendshipApiService = FriendshipApiService(apiClient);
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: themeProvider),
         ChangeNotifierProvider.value(value: connectivityProvider),
+        Provider<ClubApiService>.value(value: clubApiService),
+        Provider<ClubPostApiService>.value(value: clubPostApiService),
+        Provider<UserPostApiService>.value(value: userPostApiService),
+        Provider<PostApiService>.value(value: postApiService),
+        Provider<FriendshipApiService>.value(value: friendshipApiService),
         ChangeNotifierProvider(
           create: (_) {
             final authProvider = AuthProvider(apiClient);
@@ -104,9 +120,11 @@ Future<void> main() async {
         ),
         ChangeNotifierProvider(
           create: (_) => GroupsProvider(
-            PostApiService(apiClient),
-            ClubApiService(apiClient),
-            FriendshipApiService(apiClient),
+            clubs: clubApiService,
+            clubPosts: clubPostApiService,
+            userPosts: userPostApiService,
+            posts: postApiService,
+            friendships: friendshipApiService,
           ),
         ),
         ChangeNotifierProvider(
