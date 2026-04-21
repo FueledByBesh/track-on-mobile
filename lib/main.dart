@@ -22,11 +22,12 @@ import 'data/services/activity_sync_service.dart';
 import 'data/services/location_tracker.dart';
 import 'data/services/workout_library_service.dart';
 import 'data/services/workout_service.dart';
-import 'data/services/friendship_service.dart';
 import 'data/services/club_post_service.dart';
 import 'data/services/club_service.dart';
+import 'data/services/follow_service.dart';
 import 'data/services/post_service.dart';
 import 'data/services/user_post_service.dart';
+import 'data/services/user_service.dart';
 import 'data/services/notification_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
@@ -58,13 +59,15 @@ Future<void> main() async {
   connectivityProvider.start();
 
   // Stateless service singletons. Exposed at the top level so pages
-  // with local state (club detail, settings, notification prefs) can
-  // call the API directly without proxying through a ChangeNotifier.
+  // with local state (club detail, settings, profile, notification
+  // prefs) can call the API directly without proxying through a
+  // ChangeNotifier.
   final clubApiService = ClubApiService(apiClient);
   final clubPostApiService = ClubPostApiService(apiClient);
   final userPostApiService = UserPostApiService(apiClient);
   final postApiService = PostApiService(apiClient);
-  final friendshipApiService = FriendshipApiService(apiClient);
+  final userApiService = UserApiService(apiClient);
+  final followApiService = FollowApiService(apiClient);
 
   runApp(
     MultiProvider(
@@ -75,7 +78,8 @@ Future<void> main() async {
         Provider<ClubPostApiService>.value(value: clubPostApiService),
         Provider<UserPostApiService>.value(value: userPostApiService),
         Provider<PostApiService>.value(value: postApiService),
-        Provider<FriendshipApiService>.value(value: friendshipApiService),
+        Provider<UserApiService>.value(value: userApiService),
+        Provider<FollowApiService>.value(value: followApiService),
         ChangeNotifierProvider(
           create: (_) {
             final authProvider = AuthProvider(apiClient);
@@ -124,7 +128,8 @@ Future<void> main() async {
             clubPosts: clubPostApiService,
             userPosts: userPostApiService,
             posts: postApiService,
-            friendships: friendshipApiService,
+            users: userApiService,
+            follows: followApiService,
           ),
         ),
         ChangeNotifierProvider(

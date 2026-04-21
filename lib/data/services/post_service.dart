@@ -10,7 +10,8 @@ class PostApiService {
   PostApiService(this._api);
 
   /// Mixed timeline: club posts from the viewer's clubs + user posts
-  /// from friends and self, interleaved by createdAt DESC.
+  /// from people the viewer follows and self, interleaved by
+  /// createdAt DESC.
   Future<List<Post>> getFeed() async {
     final res = await _api.dio.get('/api/posts/feed');
     return (res.data as List).map((e) => Post.fromJson(e)).toList();

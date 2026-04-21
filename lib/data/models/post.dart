@@ -50,6 +50,7 @@ class Post {
   final String id;
   final PostKind kind;
 
+  final String authorId;
   final String authorName;
   final String authorEmail;
 
@@ -75,6 +76,7 @@ class Post {
   const Post({
     required this.id,
     required this.kind,
+    required this.authorId,
     required this.authorName,
     required this.authorEmail,
     this.clubId,
@@ -94,6 +96,7 @@ class Post {
     return Post(
       id: json['id'] as String,
       kind: PostKind.parse(json['kind'] as String?),
+      authorId: json['author_id'] as String,
       authorName: json['author_name'] ?? '',
       authorEmail: json['author_email'] ?? '',
       clubId: json['club_id'] as String?,

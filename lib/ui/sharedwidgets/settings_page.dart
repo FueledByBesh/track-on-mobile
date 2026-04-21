@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:trackon_mobile/data/models/user_settings.dart';
 import 'package:trackon_mobile/data/providers/auth_provider.dart';
 import 'package:trackon_mobile/data/providers/permission_provider.dart';
 import 'package:trackon_mobile/data/providers/theme_provider.dart';
 import 'package:trackon_mobile/data/services/permission_service.dart';
+import 'package:trackon_mobile/data/services/user_service.dart';
+import 'package:trackon_mobile/ui/sharedwidgets/edit_profile_page.dart';
+import 'package:trackon_mobile/ui/sharedwidgets/profile_page.dart';
 import 'package:trackon_mobile/ui/theme/app_theme.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -78,6 +82,54 @@ class _GeneralTabState extends State<_GeneralTab> {
   bool _autoSync = true;
   bool _weeklyReport = true;
 
+  // ----- server-backed settings -----
+  // Loaded once on init and patched per-toggle. Kept separately from
+  // the ephemeral units/auto-sync flags above which aren't wired to
+  // any backend yet.
+  UserSettings? _serverSettings;
+  bool _savingSetting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadServerSettings();
+  }
+
+  Future<void> _loadServerSettings() async {
+    try {
+      final s = await context.read<UserApiService>().getMySettings();
+      if (!mounted) return;
+      setState(() => _serverSettings = s);
+    } catch (_) {
+      // Non-fatal — privacy section just won't render until a retry.
+    }
+  }
+
+  /// Patch one setting at a time. Optimistic update to avoid toggle
+  /// lag; on failure we revert and toast.
+  Future<void> _patchSettings(Map<String, dynamic> patch,
+      UserSettings optimistic) async {
+    final previous = _serverSettings;
+    setState(() {
+      _serverSettings = optimistic;
+      _savingSetting = true;
+    });
+    try {
+      final updated =
+          await context.read<UserApiService>().updateMySettings(patch);
+      if (!mounted) return;
+      setState(() => _serverSettings = updated);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _serverSettings = previous);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save change')),
+      );
+    } finally {
+      if (mounted) setState(() => _savingSetting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -85,10 +137,42 @@ class _GeneralTabState extends State<_GeneralTab> {
       children: [
         _SectionHeader(title: 'Account'),
         _SettingsTile(
+          icon: Icons.account_circle_outlined,
+          title: 'View Profile',
+          subtitle: 'Your public profile page',
+          onTap: () => Navigator.push(
+            context,
+            // Null userId → ProfilePage fetches /api/users/me.
+            MaterialPageRoute(
+                builder: (_) => const ProfilePage(userId: null)),
+          ),
+        ),
+        _SettingsTile(
           icon: Icons.person_outline,
           title: 'Edit Profile',
-          subtitle: 'Name, email, photo',
-          onTap: () {},
+          subtitle: 'Name, handle, bio, avatar',
+          onTap: () async {
+            // Capture service + navigator/scaffold messenger before
+            // the await so the linter is happy about cross-async
+            // context use.
+            final users = context.read<UserApiService>();
+            final navigator = Navigator.of(context);
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              final me = await users.getMe();
+              if (!mounted) return;
+              navigator.push(
+                MaterialPageRoute(
+                    builder: (_) => EditProfilePage(profile: me)),
+              );
+            } catch (_) {
+              if (!mounted) return;
+              messenger.showSnackBar(
+                const SnackBar(
+                    content: Text('Could not load profile')),
+              );
+            }
+          },
         ),
         _SettingsTile(
           icon: Icons.lock_outline,
@@ -96,6 +180,65 @@ class _GeneralTabState extends State<_GeneralTab> {
           subtitle: 'Update your password',
           onTap: () {},
         ),
+        if (_serverSettings != null) ...[
+          const SizedBox(height: 24),
+          _SectionHeader(title: 'Privacy'),
+          // AbsorbPointer keeps the section inert while a PATCH is in
+          // flight so users can't stack rapid toggles faster than the
+          // server can acknowledge them.
+          AbsorbPointer(
+            absorbing: _savingSetting,
+            child: Column(
+              children: [
+                _SettingsTileSwitch(
+                  icon: Icons.visibility_outlined,
+                  title: 'Public profile',
+                  subtitle: _serverSettings!.isProfilePublic
+                      ? 'Anyone can see your posts and activity.'
+                      : 'Only your followers can see posts and activity.',
+                  value: _serverSettings!.isProfilePublic,
+                  onChanged: (v) {
+                    // Backend couples private→approval-on on first
+                    // flip; mirror locally so the UI stays in sync
+                    // without a second round-trip.
+                    final optimistic = UserSettings(
+                      defaultStepGoal:
+                          _serverSettings!.defaultStepGoal,
+                      isProfilePublic: v,
+                      requireFollowApproval: v
+                          ? _serverSettings!.requireFollowApproval
+                          : true,
+                    );
+                    _patchSettings(
+                      UserSettings.patch(isProfilePublic: v),
+                      optimistic,
+                    );
+                  },
+                ),
+                _SettingsTileSwitch(
+                  icon: Icons.person_add_alt_1_outlined,
+                  title: 'Require follow approval',
+                  subtitle:
+                      'New follow requests wait until you accept or decline.',
+                  value: _serverSettings!.requireFollowApproval,
+                  onChanged: (v) {
+                    final optimistic = UserSettings(
+                      defaultStepGoal:
+                          _serverSettings!.defaultStepGoal,
+                      isProfilePublic:
+                          _serverSettings!.isProfilePublic,
+                      requireFollowApproval: v,
+                    );
+                    _patchSettings(
+                      UserSettings.patch(requireFollowApproval: v),
+                      optimistic,
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 24),
         _SectionHeader(title: 'Preferences'),
         _SettingsTileDropdown(

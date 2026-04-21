@@ -6,6 +6,7 @@ import 'package:trackon_mobile/data/models/post.dart' as post_model;
 import 'package:trackon_mobile/data/providers/groups_provider.dart';
 import 'package:trackon_mobile/data/services/club_post_service.dart';
 import 'package:trackon_mobile/data/services/club_service.dart';
+import 'package:trackon_mobile/ui/sharedwidgets/profile_page.dart';
 import 'club_notification_settings_page.dart';
 import 'club_settings_page.dart';
 
@@ -959,35 +960,56 @@ class _ClubPostCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                    color: scheme.primary.withAlpha(100),
-                    shape: BoxShape.circle),
-                child: Center(
-                    child: Text(initials,
-                        style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                            color: scheme.onSurface))),
-              ),
-              const SizedBox(width: 12),
+              // Avatar + name row is tappable — opens the author's
+              // profile. The overflow button stays separate so it
+              // doesn't fight the tap target.
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(post.authorName,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleSmall
-                            ?.copyWith(fontWeight: FontWeight.w600)),
-                    Text(_relativeTime(post.createdAt),
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: scheme.onSurfaceVariant)),
-                  ],
+                child: InkWell(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            ProfilePage(userId: post.authorId)),
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                            color: scheme.primary.withAlpha(100),
+                            shape: BoxShape.circle),
+                        child: Center(
+                            child: Text(initials,
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                    color: scheme.onSurface))),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(post.authorName,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(
+                                        fontWeight: FontWeight.w600)),
+                            Text(_relativeTime(post.createdAt),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                        color:
+                                            scheme.onSurfaceVariant)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               IconButton(
@@ -1368,42 +1390,50 @@ class _ClubMembersTabState extends State<_ClubMembersTab> {
             final m = members[i];
             final cardColor =
                 Theme.of(context).cardTheme.color ?? scheme.surface;
-            return Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: cardColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: scheme.outlineVariant),
+            return InkWell(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => ProfilePage(userId: m.userId)),
               ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: scheme.primary.withAlpha(30),
-                    child: Text(
-                      m.name.isNotEmpty ? m.name[0] : '?',
-                      style: TextStyle(
-                          color: scheme.primary,
-                          fontWeight: FontWeight.w600),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: scheme.outlineVariant),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: scheme.primary.withAlpha(30),
+                      child: Text(
+                        m.name.isNotEmpty ? m.name[0] : '?',
+                        style: TextStyle(
+                            color: scheme.primary,
+                            fontWeight: FontWeight.w600),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(m.name,
-                            style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: scheme.onSurface)),
-                        Text(m.email,
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: scheme.onSurfaceVariant)),
-                      ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(m.name,
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: scheme.onSurface)),
+                          Text(m.email,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: scheme.onSurfaceVariant)),
+                        ],
+                      ),
                     ),
-                  ),
-                  _RoleBadge(role: m.role),
-                ],
+                    _RoleBadge(role: m.role),
+                  ],
+                ),
               ),
             );
           },

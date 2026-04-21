@@ -1,50 +1,50 @@
 import 'package:flutter/material.dart';
 import '../models/club.dart';
-import '../models/friendship.dart';
 import '../models/ownership_transfer.dart';
 import '../models/post.dart';
 import '../models/user.dart';
 import '../services/club_post_service.dart';
 import '../services/club_service.dart';
-import '../services/friendship_service.dart';
+import '../services/follow_service.dart';
 import '../services/post_service.dart';
 import '../services/user_post_service.dart';
+import '../services/user_service.dart';
 
 /// Top-level state for the Groups tab: feed, my-clubs grouping, search
-/// results, friends, and the ownership-transfer inbox.
+/// results, follow state, and the ownership-transfer inbox.
 ///
-/// Per-club detail state (members, posts, challenges, settings) is NOT
-/// held here — the detail page owns that locally and only calls back
-/// into this provider to mutate ambient state (join → refresh
-/// `_myClubs` grouping). Keeps this class from becoming a dumping
-/// ground.
+/// Per-club and per-user detail state isn't held here — detail pages
+/// own their own local state and call back into this provider only to
+/// mutate ambient lists (follow → bump counts / refresh inbox).
 class GroupsProvider extends ChangeNotifier {
   final ClubApiService _clubs;
   final ClubPostApiService _clubPosts;
   final UserPostApiService _userPosts;
   final PostApiService _posts;
-  final FriendshipApiService _friendships;
+  final UserApiService _users;
+  final FollowApiService _follows;
 
   GroupsProvider({
     required ClubApiService clubs,
     required ClubPostApiService clubPosts,
     required UserPostApiService userPosts,
     required PostApiService posts,
-    required FriendshipApiService friendships,
+    required UserApiService users,
+    required FollowApiService follows,
   })  : _clubs = clubs,
         _clubPosts = clubPosts,
         _userPosts = userPosts,
         _posts = posts,
-        _friendships = friendships;
+        _users = users,
+        _follows = follows;
 
   // ============ STATE ============
 
   List<Post> _feed = const [];
   MyClubs _myClubs = const MyClubs(owned: [], admin: [], member: []);
   List<Club> _searchedClubs = const [];
-  List<Friendship> _friends = const [];
-  List<Friendship> _incomingFriendRequests = const [];
   List<UserSearchResult> _searchedUsers = const [];
+  List<UserPreview> _incomingFollowRequests = const [];
   List<OwnershipTransfer> _incomingTransfers = const [];
   bool _isLoading = false;
   bool _hasLoadedFeed = false;
@@ -53,14 +53,13 @@ class GroupsProvider extends ChangeNotifier {
   List<Post> get feed => _feed;
   MyClubs get myClubs => _myClubs;
   List<Club> get searchedClubs => _searchedClubs;
-  List<Friendship> get friends => _friends;
-  List<Friendship> get incomingRequests => _incomingFriendRequests;
   List<UserSearchResult> get searchedUsers => _searchedUsers;
+  List<UserPreview> get incomingFollowRequests => _incomingFollowRequests;
   List<OwnershipTransfer> get incomingTransfers => _incomingTransfers;
   bool get isLoading => _isLoading;
 
-  /// Flat view for callers that just want "all clubs I'm in" without
-  /// caring about role. Useful in menus and for feed refreshes.
+  /// Flat view for callers that just want "all clubs I'm in" regardless
+  /// of role. Useful for feed refreshes and menu lists.
   List<Club> get allMyClubs =>
       [..._myClubs.owned, ..._myClubs.admin, ..._myClubs.member];
 
@@ -169,8 +168,6 @@ class GroupsProvider extends ChangeNotifier {
     return club;
   }
 
-  /// Public-club direct join. For private clubs the detail page calls
-  /// [requestJoinClub] instead — the server 400s on this path otherwise.
   Future<Club> joinClub(String clubId) async {
     try {
       final updated = await _clubs.joinPublic(clubId);
@@ -182,9 +179,6 @@ class GroupsProvider extends ChangeNotifier {
     }
   }
 
-  /// Private-club join request. After success we reload `/mine` because
-  /// the `allowJoinWithoutRequest` shortcut can flip the grouping
-  /// (user instantly becomes a MEMBER).
   Future<void> requestJoinClub(String clubId) async {
     try {
       await _clubs.requestJoin(clubId);
@@ -225,8 +219,6 @@ class GroupsProvider extends ChangeNotifier {
     }
   }
 
-  /// Called from the accept-transfer banner. Reloads `/mine` since the
-  /// user's role in the relevant club just flipped to OWNER.
   Future<void> acceptTransfer(String clubId) async {
     try {
       await _clubs.acceptTransfer(clubId);
@@ -247,59 +239,64 @@ class GroupsProvider extends ChangeNotifier {
     }
   }
 
-  // ============ FRIENDS ============
-
-  Future<void> loadFriends() async {
-    try {
-      _friends = await _friendships.getFriends();
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Error loading friends: $e');
-    }
-  }
-
-  Future<void> loadIncomingRequests() async {
-    try {
-      _incomingFriendRequests = await _friendships.getIncomingRequests();
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Error loading requests: $e');
-    }
-  }
+  // ============ PEOPLE — SEARCH + FOLLOW ============
 
   Future<void> searchUsers(String query) async {
     try {
-      _searchedUsers = await _friendships.searchUsers(query);
+      _searchedUsers = await _users.search(query);
       notifyListeners();
     } catch (e) {
       debugPrint('Error searching users: $e');
     }
   }
 
-  Future<void> sendFriendRequest(String email) async {
+  Future<void> loadIncomingFollowRequests() async {
     try {
-      await _friendships.sendRequest(email);
-      await loadFriends();
+      _incomingFollowRequests = await _follows.incomingRequests();
+      notifyListeners();
     } catch (e) {
-      debugPrint('Error sending friend request: $e');
+      debugPrint('Error loading follow requests: $e');
     }
   }
 
-  Future<void> acceptRequest(String friendshipId) async {
+  /// Follow a user. Resolves to the new status (PENDING for
+  /// approval-required profiles, ACCEPTED otherwise). Callers can use
+  /// the returned value to update local UI state immediately.
+  Future<void> followUser(String targetId) async {
     try {
-      await _friendships.acceptRequest(friendshipId);
-      await Future.wait([loadFriends(), loadIncomingRequests()]);
+      await _follows.follow(targetId);
     } catch (e) {
-      debugPrint('Error accepting request: $e');
+      debugPrint('Error following user: $e');
+      rethrow;
     }
   }
 
-  Future<void> rejectRequest(String friendshipId) async {
+  Future<void> unfollowUser(String targetId) async {
     try {
-      await _friendships.rejectRequest(friendshipId);
-      await loadIncomingRequests();
+      await _follows.unfollow(targetId);
     } catch (e) {
-      debugPrint('Error rejecting request: $e');
+      debugPrint('Error unfollowing user: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> acceptFollowRequest(String followerId) async {
+    try {
+      await _follows.acceptRequest(followerId);
+      await loadIncomingFollowRequests();
+    } catch (e) {
+      debugPrint('Error accepting follow request: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> rejectFollowRequest(String followerId) async {
+    try {
+      await _follows.rejectRequest(followerId);
+      await loadIncomingFollowRequests();
+    } catch (e) {
+      debugPrint('Error rejecting follow request: $e');
+      rethrow;
     }
   }
 }

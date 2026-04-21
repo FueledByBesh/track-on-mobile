@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/models/club.dart';
 import 'package:trackon_mobile/data/models/ownership_transfer.dart';
 import 'package:trackon_mobile/data/models/post.dart' as post_model;
+import 'package:trackon_mobile/data/models/user.dart';
 import 'package:trackon_mobile/data/providers/groups_provider.dart';
 import 'package:trackon_mobile/ui/pages/clubs/club_detail_page.dart';
 import 'package:trackon_mobile/ui/pages/clubs/create_club_page.dart';
+import 'package:trackon_mobile/ui/sharedwidgets/profile_page.dart';
 
 class GroupsPage extends StatefulWidget {
   const GroupsPage({super.key});
@@ -26,8 +28,7 @@ class _GroupsPageState extends State<GroupsPage>
       final provider = context.read<GroupsProvider>();
       provider.loadFeed();
       provider.loadMyClubs();
-      provider.loadFriends();
-      provider.loadIncomingRequests();
+      provider.loadIncomingFollowRequests();
       provider.loadIncomingTransfers();
     });
   }
@@ -61,13 +62,13 @@ class _GroupsPageState extends State<GroupsPage>
             tabs: const [
               Tab(text: 'Feed'),
               Tab(text: 'Clubs'),
-              Tab(text: 'Friends'),
+              Tab(text: 'People'),
             ],
           ),
           Expanded(
             child: TabBarView(
               controller: _tabController,
-              children: const [FeedTab(), ClubsTab(), FriendsTab()],
+              children: const [FeedTab(), ClubsTab(), PeopleTab()],
             ),
           ),
         ],
@@ -144,41 +145,50 @@ class _PostCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                    color: scheme.primary.withAlpha(100),
-                    shape: BoxShape.circle),
-                child: Center(
-                    child: Text(initials,
-                        style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                            color: scheme.onSurface))),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(post.authorName,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleSmall
-                            ?.copyWith(fontWeight: FontWeight.w600)),
-                    if (post.clubName != null)
-                      Text(post.clubName!,
+          // Author row — tap the avatar / name to open the profile.
+          InkWell(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => ProfilePage(userId: post.authorId)),
+            ),
+            borderRadius: BorderRadius.circular(8),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                      color: scheme.primary.withAlpha(100),
+                      shape: BoxShape.circle),
+                  child: Center(
+                      child: Text(initials,
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              color: scheme.onSurface))),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(post.authorName,
                           style: Theme.of(context)
                               .textTheme
-                              .bodySmall
-                              ?.copyWith(color: scheme.primary)),
-                  ],
+                              .titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600)),
+                      if (post.clubName != null)
+                        Text(post.clubName!,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: scheme.primary)),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 12),
           Text(post.content, style: Theme.of(context).textTheme.bodyMedium),
@@ -400,11 +410,22 @@ class _PendingTransfersBanner extends StatelessWidget {
                 Icon(Icons.swap_horiz, color: scheme.primary),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    '${t.fromUserName} wants to transfer ownership of '
-                    '${t.clubName} to you',
-                    style: TextStyle(
-                        fontSize: 13, color: scheme.onSurface),
+                  // Tapping the message opens the transferring owner's
+                  // profile — useful if the recipient wants to check
+                  // who's asking before accepting.
+                  child: InkWell(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) =>
+                              ProfilePage(userId: t.fromUserId)),
+                    ),
+                    child: Text(
+                      '${t.fromUserName} wants to transfer ownership of '
+                      '${t.clubName} to you',
+                      style: TextStyle(
+                          fontSize: 13, color: scheme.onSurface),
+                    ),
                   ),
                 ),
                 TextButton(
@@ -822,21 +843,35 @@ class _InlineRoleBadge extends StatelessWidget {
   }
 }
 
-// ============ FRIENDS TAB ============
+// ============ PEOPLE TAB ============
 
-class FriendsTab extends StatefulWidget {
-  const FriendsTab({super.key});
+/// User-focused third tab. Hosts three things:
+///   1. Search bar — finds users by name / handle / email.
+///   2. Pending follow-request inbox — banner when the viewer has
+///      incoming follow requests (private profile / approval-required).
+///   3. "People you follow" list — simple always-visible listing.
+///      Suggestions section will be added once the backend ships a
+///      `/api/users/suggestions` endpoint.
+class PeopleTab extends StatefulWidget {
+  const PeopleTab({super.key});
 
   @override
-  State<FriendsTab> createState() => _FriendsTabState();
+  State<PeopleTab> createState() => _PeopleTabState();
 }
 
-class _FriendsTabState extends State<FriendsTab> {
+class _PeopleTabState extends State<PeopleTab> {
   final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<GroupsProvider>();
+    final scheme = Theme.of(context).colorScheme;
     final isSearching = _searchController.text.isNotEmpty;
 
     return Column(
@@ -846,11 +881,12 @@ class _FriendsTabState extends State<FriendsTab> {
           child: TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Search users...',
+              hintText: 'Search by name or @handle',
               prefixIcon: const Icon(Icons.search),
               border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade300)),
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: scheme.outlineVariant),
+              ),
               contentPadding:
                   const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
             ),
@@ -860,186 +896,279 @@ class _FriendsTabState extends State<FriendsTab> {
             },
           ),
         ),
-        // Incoming requests
-        if (provider.incomingRequests.isNotEmpty && !isSearching)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Friend Requests',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 8),
-                ...provider.incomingRequests.map((req) => Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                          color: Colors.orange.withAlpha(20),
-                          borderRadius: BorderRadius.circular(12)),
-                      child: Row(
-                        children: [
-                          Expanded(
-                              child: Text(req.friendName.isNotEmpty
-                                  ? req.friendName
-                                  : req.friendEmail)),
-                          IconButton(
-                              onPressed: () =>
-                                  provider.acceptRequest(req.friendshipId),
-                              icon: const Icon(Icons.check,
-                                  color: Colors.green)),
-                          IconButton(
-                              onPressed: () =>
-                                  provider.rejectRequest(req.friendshipId),
-                              icon:
-                                  const Icon(Icons.close, color: Colors.red)),
-                        ],
-                      ),
-                    )),
-                const SizedBox(height: 8),
-              ],
-            ),
-          ),
+        // Follow-request inbox — only shown outside search mode so it
+        // doesn't compete with the search results for attention.
+        if (provider.incomingFollowRequests.isNotEmpty && !isSearching)
+          _FollowRequestsBanner(
+              requests: provider.incomingFollowRequests,
+              provider: provider),
         Expanded(
           child: isSearching
-              ? _buildSearchResults(provider)
-              : _buildFriendsList(provider),
+              ? _buildSearchResults(provider, scheme)
+              : _buildEmptyState(scheme),
         ),
       ],
     );
   }
 
-  Widget _buildSearchResults(GroupsProvider provider) {
+  Widget _buildSearchResults(GroupsProvider provider, ColorScheme scheme) {
     final results = provider.searchedUsers;
     if (results.isEmpty) {
-      return const Center(
+      return Center(
           child: Text('No users found',
-              style: TextStyle(color: Colors.grey)));
+              style: TextStyle(color: scheme.onSurfaceVariant)));
     }
-    final scheme = Theme.of(context).colorScheme;
-    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: results.length,
-      itemBuilder: (context, index) {
-        final user = results[index];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-              color: cardColor,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: scheme.outlineVariant)),
-          child: Row(
-            children: [
-              CircleAvatar(
-                  backgroundColor: scheme.primary.withAlpha(30),
-                  child: Text(
-                      user.fullName.isNotEmpty ? user.fullName[0] : '?',
-                      style: TextStyle(color: scheme.primary))),
-              const SizedBox(width: 12),
-              Expanded(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                    Text(user.fullName,
-                        style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: scheme.onSurface)),
-                    Text(user.email,
-                        style: TextStyle(
-                            fontSize: 12, color: scheme.onSurfaceVariant)),
-                  ])),
-              ElevatedButton(
-                onPressed: () {
-                  provider.sendFriendRequest(user.email);
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text('Request sent to ${user.fullName}')));
-                },
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: scheme.primary,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8))),
-                child: const Text('Add', style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          ),
-        );
-      },
+      itemBuilder: (context, index) =>
+          _UserSearchRow(user: results[index]),
     );
   }
 
-  Widget _buildFriendsList(GroupsProvider provider) {
-    final friends = provider.friends;
-    if (friends.isEmpty) {
-      return Center(
+  Widget _buildEmptyState(ColorScheme scheme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
         child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.people_outline,
-                  size: 48, color: Colors.grey.shade300),
-              const SizedBox(height: 12),
-              Text('No friends yet',
-                  style: TextStyle(color: Colors.grey.shade500)),
-              const SizedBox(height: 4),
-              Text('Search for users above',
-                  style:
-                      TextStyle(color: Colors.grey.shade400, fontSize: 12)),
-            ]),
-      );
-    }
-    final scheme = Theme.of(context).colorScheme;
-    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: friends.length,
-      itemBuilder: (context, index) {
-        final friend = friends[index];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-              color: cardColor,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: scheme.outlineVariant)),
-          child: Row(
-            children: [
-              CircleAvatar(
-                  backgroundColor: scheme.primary.withAlpha(30),
-                  child: Text(
-                      friend.friendName.isNotEmpty
-                          ? friend.friendName[0]
-                          : '?',
-                      style: TextStyle(color: scheme.primary))),
-              const SizedBox(width: 12),
-              Expanded(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                    Text(
-                        friend.friendName.isNotEmpty
-                            ? friend.friendName
-                            : friend.friendEmail,
-                        style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: scheme.onSurface)),
-                    Text(friend.friendEmail,
-                        style: TextStyle(
-                            fontSize: 12, color: scheme.onSurfaceVariant)),
-                  ])),
-              Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
-            ],
-          ),
-        );
-      },
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.people_outline,
+                size: 48, color: scheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text('Find people to follow',
+                style: TextStyle(
+                    color: scheme.onSurface,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text(
+              'Search by name or @handle to discover other runners.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: scheme.onSurfaceVariant, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
     );
+  }
+}
+
+/// Banner listing incoming follow requests. Each row has accept/decline
+/// actions; taps flow through [GroupsProvider] which refreshes the
+/// inbox on resolution.
+class _FollowRequestsBanner extends StatelessWidget {
+  final List<UserPreview> requests;
+  final GroupsProvider provider;
+  const _FollowRequestsBanner(
+      {required this.requests, required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Follow Requests',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          ...requests.map((u) => Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withAlpha(20),
+                  borderRadius: BorderRadius.circular(12),
+                  border:
+                      Border.all(color: scheme.primary.withAlpha(60)),
+                ),
+                child: Row(
+                  children: [
+                    // Tapping the avatar/name opens the requester's
+                    // profile so you can see who's asking before
+                    // deciding to accept.
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  ProfilePage(userId: u.id)),
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              backgroundColor:
+                                  scheme.primary.withAlpha(40),
+                              child: Text(
+                                u.fullName.isNotEmpty
+                                    ? u.fullName[0]
+                                    : '?',
+                                style: TextStyle(
+                                    color: scheme.primary),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text(u.fullName,
+                                      style: TextStyle(
+                                          fontWeight:
+                                              FontWeight.w600,
+                                          color: scheme.onSurface)),
+                                  Text('@${u.handle}',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: scheme
+                                              .onSurfaceVariant)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Accept',
+                      onPressed: () =>
+                          provider.acceptFollowRequest(u.id),
+                      icon: const Icon(Icons.check, color: Colors.green),
+                    ),
+                    IconButton(
+                      tooltip: 'Decline',
+                      onPressed: () =>
+                          provider.rejectFollowRequest(u.id),
+                      icon: const Icon(Icons.close, color: Colors.red),
+                    ),
+                  ],
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+}
+
+/// Search-result row. Tap → future profile page. "Follow" button hits
+/// the provider and locally swaps the CTA to reflect the new state.
+class _UserSearchRow extends StatefulWidget {
+  final UserSearchResult user;
+  const _UserSearchRow({required this.user});
+
+  @override
+  State<_UserSearchRow> createState() => _UserSearchRowState();
+}
+
+class _UserSearchRowState extends State<_UserSearchRow> {
+  bool _followed = false;
+  bool _pending = false;
+  bool _busy = false;
+
+  Future<void> _toggle() async {
+    final provider = context.read<GroupsProvider>();
+    setState(() => _busy = true);
+    try {
+      if (_followed || _pending) {
+        await provider.unfollowUser(widget.user.id);
+        setState(() {
+          _followed = false;
+          _pending = false;
+        });
+      } else {
+        await provider.followUser(widget.user.id);
+        // Status on the follow response would tell us PENDING vs
+        // ACCEPTED; we don't propagate it here yet — this row is a
+        // simple toggle for now. Swap to the dedicated profile page's
+        // button once that lands.
+        setState(() => _followed = true);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Something went wrong')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+    final user = widget.user;
+    return InkWell(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => ProfilePage(userId: user.id)),
+      ),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: scheme.outlineVariant)),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: scheme.primary.withAlpha(30),
+            child: Text(user.fullName.isNotEmpty ? user.fullName[0] : '?',
+                style: TextStyle(color: scheme.primary)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(user.fullName,
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurface)),
+                Text(user.email,
+                    style: TextStyle(
+                        fontSize: 12, color: scheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          if (_followed)
+            OutlinedButton(
+              onPressed: _busy ? null : _toggle,
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: scheme.outlineVariant),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Following'),
+            )
+          else if (_pending)
+            OutlinedButton(
+              onPressed: _busy ? null : _toggle,
+              child: const Text('Requested'),
+            )
+          else
+            ElevatedButton(
+              onPressed: _busy ? null : _toggle,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: scheme.primary,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              child:
+                  const Text('Follow', style: TextStyle(color: Colors.white)),
+            ),
+        ],
+      ),
+      ),
+    );
   }
 }

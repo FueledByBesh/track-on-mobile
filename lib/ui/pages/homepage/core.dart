@@ -9,7 +9,7 @@ import 'package:trackon_mobile/data/providers/steps_provider.dart';
 import 'package:trackon_mobile/data/services/permission_service.dart';
 import 'package:trackon_mobile/data/models/workout.dart';
 import 'package:trackon_mobile/data/models/daily_steps.dart';
-import 'package:trackon_mobile/ui/pages/logs/logs_page.dart';
+import 'package:trackon_mobile/ui/pages/debug/debug_page.dart';
 import 'package:trackon_mobile/ui/pages/program/program_detail_page.dart';
 import 'package:trackon_mobile/ui/pages/workout/about_workout_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/notifications_page.dart';
@@ -305,15 +305,15 @@ class _HomeHeader extends StatelessWidget {
             icon: const Icon(Icons.notifications_outlined),
             color: iconColor,
           ),
-          // Dev-only in-app logs — remove before release
+          // Dev-only debug tools — remove before release
           IconButton(
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const LogsPage()),
+              MaterialPageRoute(builder: (_) => const DebugPage()),
             ),
             icon: const Icon(Icons.bug_report_outlined),
             color: iconColor,
-            tooltip: 'Logs (dev)',
+            tooltip: 'Debug (dev)',
           ),
           IconButton(
             onPressed: () => Navigator.push(
