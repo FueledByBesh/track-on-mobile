@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/models/post.dart' as post_model;
 import 'package:trackon_mobile/data/models/user.dart';
@@ -10,13 +11,17 @@ import 'package:trackon_mobile/data/services/user_service.dart';
 
 import 'followers_list_page.dart';
 import 'edit_profile_page.dart';
+import 'user_avatar.dart';
 
 /// Unified profile page for both the viewer's own profile and any
-/// other user's. Fetches the full [UserProfile] via [UserApiService]
-/// on open, then renders the header + three tabs (Activity / Posts /
-/// Clubs). The follow state machine on the header flips between
-/// Follow / Requested / Following. Self-view swaps the follow button
-/// for an Edit pencil in the app bar.
+/// other user's.
+///
+/// The page hits two endpoints in parallel: the cacheable profile
+/// core ([UserProfile]) and the live stats ([UserStats]). Profile
+/// core is usually a 304 so the cached copy powers the header with
+/// almost no latency; stats almost always returns fresh counts. The
+/// follow-state machine on the header (Follow / Requested / Following)
+/// drives off stats; the Edit pencil on self-view drives off profile.
 ///
 /// Private profiles render a locked state on the content tabs when the
 /// viewer isn't following — matches the ClubDetailPage gating pattern.
@@ -36,6 +41,7 @@ class _ProfilePageState extends State<ProfilePage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   UserProfile? _profile;
+  UserStats? _stats;
   bool _loading = true;
   String? _error;
 
@@ -55,12 +61,16 @@ class _ProfilePageState extends State<ProfilePage>
   Future<void> _load() async {
     final users = context.read<UserApiService>();
     try {
-      final p = widget.userId == null
-          ? await users.getMe()
-          : await users.getById(widget.userId!);
+      final results = widget.userId == null
+          ? await Future.wait([users.getMe(), users.getMyStats()])
+          : await Future.wait([
+              users.getById(widget.userId!),
+              users.getStatsById(widget.userId!),
+            ]);
       if (!mounted) return;
       setState(() {
-        _profile = p;
+        _profile = results[0] as UserProfile;
+        _stats = results[1] as UserStats;
         _loading = false;
         _error = null;
       });
@@ -73,9 +83,20 @@ class _ProfilePageState extends State<ProfilePage>
     }
   }
 
-  /// Re-fetches the profile after any follow-state change so counts
-  /// and viewer-relative flags stay consistent.
-  Future<void> _reload() => _load();
+  /// Re-fetch stats after any follow-state change. Profile core doesn't
+  /// move when someone follows, so there's no reason to refetch it.
+  Future<void> _reloadStats() async {
+    final users = context.read<UserApiService>();
+    try {
+      final fresh = widget.userId == null
+          ? await users.getMyStats()
+          : await users.getStatsById(widget.userId!);
+      if (!mounted) return;
+      setState(() => _stats = fresh);
+    } catch (_) {
+      // Non-fatal; the stale stats stay visible.
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -83,7 +104,7 @@ class _ProfilePageState extends State<ProfilePage>
       return const Scaffold(
           body: Center(child: CircularProgressIndicator()));
     }
-    if (_error != null || _profile == null) {
+    if (_error != null || _profile == null || _stats == null) {
       return Scaffold(
         appBar: AppBar(),
         body: Center(
@@ -102,11 +123,12 @@ class _ProfilePageState extends State<ProfilePage>
     }
 
     final p = _profile!;
+    final s = _stats!;
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('@${p.handle}'),
+        title: _HandleTitle(handle: p.handle),
         actions: [
           if (p.isSelf)
             IconButton(
@@ -130,7 +152,8 @@ class _ProfilePageState extends State<ProfilePage>
           SliverToBoxAdapter(
             child: _ProfileHeader(
               profile: p,
-              onFollowChanged: _reload,
+              stats: s,
+              onFollowChanged: _reloadStats,
             ),
           ),
           SliverPersistentHeader(
@@ -154,11 +177,61 @@ class _ProfilePageState extends State<ProfilePage>
         body: TabBarView(
           controller: _tabController,
           children: [
-            _ActivityTab(profile: p),
-            _PostsTab(profile: p),
-            _ClubsTab(profile: p),
+            _ActivityTab(profile: p, stats: s),
+            _PostsTab(profile: p, stats: s),
+            _ClubsTab(profile: p, stats: s),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ============ APPBAR TITLE ============
+
+/// `@handle` + copy-to-clipboard icon. Shown as the AppBar title so the
+/// handle is always visible (and copyable) without cluttering the
+/// header body with a duplicate.
+class _HandleTitle extends StatelessWidget {
+  final String handle;
+  const _HandleTitle({required this.handle});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            '@$handle',
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 4),
+        InkWell(
+          onTap: () => _copy(context),
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Icon(
+              Icons.content_copy,
+              size: 16,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _copy(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: '@$handle'));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('@$handle copied'),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
@@ -168,13 +241,15 @@ class _ProfilePageState extends State<ProfilePage>
 
 class _ProfileHeader extends StatelessWidget {
   final UserProfile profile;
+  final UserStats stats;
 
   /// Called after a follow/unfollow/request action so the page can
-  /// refetch counts + viewer-relative flags.
+  /// refetch stats.
   final VoidCallback onFollowChanged;
 
   const _ProfileHeader({
     required this.profile,
+    required this.stats,
     required this.onFollowChanged,
   });
 
@@ -184,41 +259,41 @@ class _ProfileHeader extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Avatar(profile: profile, size: 96),
-          const SizedBox(height: 14),
+          // Row 1: avatar (left) + compact stats (right).
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              UserAvatar(profile: profile, sizePx: 84),
+              const SizedBox(width: 20),
+              Expanded(child: _StatsRow(profile: profile, stats: stats)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Name (bold), bio, location — below the avatar row.
           Text(
-            profile.fullName.isNotEmpty ? profile.fullName : '@${profile.handle}',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            profile.fullName.isNotEmpty
+                ? profile.fullName
+                : '@${profile.handle}',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            '@${profile.handle}',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-          ),
           if (profile.bio != null && profile.bio!.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Text(
-                profile.bio!,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: scheme.onSurface,
-                      height: 1.4,
-                    ),
-              ),
+            const SizedBox(height: 6),
+            Text(
+              profile.bio!,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurface,
+                    height: 1.35,
+                  ),
             ),
           ],
           if (profile.location != null && profile.location!.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Row(
               mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(Icons.place_outlined,
                     size: 14, color: scheme.onSurfaceVariant),
@@ -229,64 +304,20 @@ class _ProfileHeader extends StatelessWidget {
               ],
             ),
           ],
-          const SizedBox(height: 16),
-          // Follow / Edit action
-          if (!profile.isSelf)
-            _FollowButton(profile: profile, onChanged: onFollowChanged),
-          const SizedBox(height: 16),
-          _StatsRow(profile: profile),
+          if (!profile.isSelf) ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: _FollowButton(
+                profile: profile,
+                stats: stats,
+                onChanged: onFollowChanged,
+              ),
+            ),
+          ],
         ],
       ),
     );
-  }
-}
-
-class _Avatar extends StatelessWidget {
-  final UserProfile profile;
-  final double size;
-  const _Avatar({required this.profile, required this.size});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final initials = _initials(profile);
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          colors: [scheme.primary, scheme.primary.withAlpha(160)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        image: profile.avatarImageUrl != null
-            ? DecorationImage(
-                image: NetworkImage(profile.avatarImageUrl!),
-                fit: BoxFit.cover,
-              )
-            : null,
-      ),
-      child: profile.avatarImageUrl == null
-          ? Center(
-              child: Text(
-                initials,
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: size * 0.35,
-                    fontWeight: FontWeight.w700),
-              ),
-            )
-          : null,
-    );
-  }
-
-  static String _initials(UserProfile p) {
-    final first = p.firstName.isNotEmpty ? p.firstName[0] : '';
-    final last = p.lastName.isNotEmpty ? p.lastName[0] : '';
-    final combined = (first + last).toUpperCase();
-    if (combined.isNotEmpty) return combined;
-    return p.handle.isNotEmpty ? p.handle[0].toUpperCase() : '?';
   }
 }
 
@@ -295,8 +326,13 @@ class _Avatar extends StatelessWidget {
 /// counts in sync afterward.
 class _FollowButton extends StatefulWidget {
   final UserProfile profile;
+  final UserStats stats;
   final VoidCallback onChanged;
-  const _FollowButton({required this.profile, required this.onChanged});
+  const _FollowButton({
+    required this.profile,
+    required this.stats,
+    required this.onChanged,
+  });
 
   @override
   State<_FollowButton> createState() => _FollowButtonState();
@@ -306,14 +342,14 @@ class _FollowButtonState extends State<_FollowButton> {
   bool _busy = false;
 
   Future<void> _onPressed() async {
-    final p = widget.profile;
+    final s = widget.stats;
     setState(() => _busy = true);
     try {
       final follows = context.read<FollowApiService>();
-      if (p.isFollowing || p.hasPendingFollowRequest) {
-        await follows.unfollow(p.id);
+      if (s.isFollowing || s.hasPendingFollowRequest) {
+        await follows.unfollow(widget.profile.id);
       } else {
-        await follows.follow(p.id);
+        await follows.follow(widget.profile.id);
       }
       widget.onChanged();
     } catch (_) {
@@ -329,9 +365,9 @@ class _FollowButtonState extends State<_FollowButton> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final p = widget.profile;
+    final s = widget.stats;
 
-    if (p.hasPendingFollowRequest) {
+    if (s.hasPendingFollowRequest) {
       return OutlinedButton.icon(
         onPressed: _busy ? null : _onPressed,
         icon: const Icon(Icons.hourglass_top, size: 16),
@@ -344,7 +380,7 @@ class _FollowButtonState extends State<_FollowButton> {
         ),
       );
     }
-    if (p.isFollowing) {
+    if (s.isFollowing) {
       return OutlinedButton.icon(
         onPressed: _busy ? null : _onPressed,
         icon: const Icon(Icons.check, size: 16),
@@ -378,7 +414,8 @@ class _FollowButtonState extends State<_FollowButton> {
 /// instead (or no-op for now).
 class _StatsRow extends StatelessWidget {
   final UserProfile profile;
-  const _StatsRow({required this.profile});
+  final UserStats stats;
+  const _StatsRow({required this.profile, required this.stats});
 
   @override
   Widget build(BuildContext context) {
@@ -386,10 +423,10 @@ class _StatsRow extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         _StatTile(
-            label: 'Posts', value: profile.postsCount, onTap: null),
+            label: 'Posts', value: stats.postsCount, onTap: null),
         _StatTile(
           label: 'Followers',
-          value: profile.followersCount,
+          value: stats.followersCount,
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
@@ -403,7 +440,7 @@ class _StatsRow extends StatelessWidget {
         ),
         _StatTile(
           label: 'Following',
-          value: profile.followingCount,
+          value: stats.followingCount,
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
@@ -416,7 +453,7 @@ class _StatsRow extends StatelessWidget {
           ),
         ),
         _StatTile(
-            label: 'Clubs', value: profile.clubsCount, onTap: null),
+            label: 'Clubs', value: stats.clubsCount, onTap: null),
       ],
     );
   }
@@ -498,8 +535,8 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
 
 /// True iff the viewer can read this profile's content tabs.
 /// Mirrors the backend `UserAccessEvaluator.canViewContent` rule.
-bool _canViewContent(UserProfile p) =>
-    p.isSelf || p.isProfilePublic || p.isFollowing;
+bool _canViewContent(UserProfile p, UserStats s) =>
+    p.isSelf || p.isProfilePublic || s.isFollowing;
 
 class _LockedTab extends StatelessWidget {
   final String label;
@@ -548,11 +585,12 @@ class _LockedTab extends StatelessWidget {
 
 class _ActivityTab extends StatelessWidget {
   final UserProfile profile;
-  const _ActivityTab({required this.profile});
+  final UserStats stats;
+  const _ActivityTab({required this.profile, required this.stats});
 
   @override
   Widget build(BuildContext context) {
-    if (!_canViewContent(profile)) {
+    if (!_canViewContent(profile, stats)) {
       return const _LockedTab(
         icon: Icons.lock_outline,
         label: 'Activity is private',
@@ -582,7 +620,8 @@ class _ActivityTab extends StatelessWidget {
 
 class _PostsTab extends StatefulWidget {
   final UserProfile profile;
-  const _PostsTab({required this.profile});
+  final UserStats stats;
+  const _PostsTab({required this.profile, required this.stats});
 
   @override
   State<_PostsTab> createState() => _PostsTabState();
@@ -600,7 +639,7 @@ class _PostsTabState extends State<_PostsTab> {
   /// Fetches both kinds in parallel and interleaves by createdAt DESC.
   /// Mirrors the backend feed composition for a single user's timeline.
   Future<List<post_model.Post>> _load() async {
-    if (!_canViewContent(widget.profile)) return const [];
+    if (!_canViewContent(widget.profile, widget.stats)) return const [];
     final clubPosts = context.read<ClubPostApiService>();
     final userPosts = context.read<UserPostApiService>();
     final results = await Future.wait([
@@ -614,7 +653,7 @@ class _PostsTabState extends State<_PostsTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_canViewContent(widget.profile)) {
+    if (!_canViewContent(widget.profile, widget.stats)) {
       return const _LockedTab(
         icon: Icons.forum_outlined,
         label: 'Posts are private',
@@ -758,11 +797,12 @@ String _relativeTime(String iso) {
 
 class _ClubsTab extends StatelessWidget {
   final UserProfile profile;
-  const _ClubsTab({required this.profile});
+  final UserStats stats;
+  const _ClubsTab({required this.profile, required this.stats});
 
   @override
   Widget build(BuildContext context) {
-    if (!_canViewContent(profile)) {
+    if (!_canViewContent(profile, stats)) {
       return const _LockedTab(
         icon: Icons.groups_outlined,
         label: 'Clubs are private',
@@ -845,4 +885,3 @@ class _ClubsTab extends StatelessWidget {
     );
   }
 }
-

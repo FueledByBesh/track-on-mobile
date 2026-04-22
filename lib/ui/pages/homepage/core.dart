@@ -16,6 +16,9 @@ import 'package:trackon_mobile/ui/sharedwidgets/notifications_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/workout_thumbnail.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/profile_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/settings_page.dart';
+import 'package:trackon_mobile/ui/sharedwidgets/user_avatar.dart';
+import 'package:trackon_mobile/data/models/user.dart';
+import 'package:trackon_mobile/data/services/cache_store.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -242,9 +245,40 @@ class HomePageBody extends StatelessWidget {
 /// Inline header row at the top of the home page scroll view.
 /// Theme-aware: avatar accent, icon colors, and greeting text all
 /// derive from Theme.of(context).colorScheme.
-class _HomeHeader extends StatelessWidget {
+///
+/// The avatar is read straight from [CacheStore] — no network fetch on
+/// every home-page entry, no 304 round-trip flash. The ProfilePage
+/// keeps the cache fresh whenever the user opens their own profile
+/// (or saves edits), which is the canonical path for avatar changes.
+class _HomeHeader extends StatefulWidget {
   const _HomeHeader();
   static const double horizontalPadding = HomePageBody.horizontalPadding;
+
+  @override
+  State<_HomeHeader> createState() => _HomeHeaderState();
+}
+
+class _HomeHeaderState extends State<_HomeHeader> {
+  UserProfile? _me;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadMe());
+  }
+
+  /// Pulls the last cached `user:me` row; no network. Fast enough that
+  /// the placeholder is effectively never visible on subsequent app
+  /// launches after the first profile open.
+  Future<void> _loadMe() async {
+    try {
+      final entry = await context.read<CacheStore>().read('user:me');
+      if (entry == null || !mounted) return;
+      setState(() => _me = UserProfile.fromJson(entry.decodeMap()));
+    } catch (_) {
+      // Silent fallback to the placeholder avatar.
+    }
+  }
 
   String get _greeting {
     final hour = DateTime.now().hour;
@@ -262,8 +296,8 @@ class _HomeHeader extends StatelessWidget {
       padding: const EdgeInsets.only(
         top: 4,
         bottom: 4,
-        left: horizontalPadding,
-        right: horizontalPadding,
+        left: _HomeHeader.horizontalPadding,
+        right: _HomeHeader.horizontalPadding,
       ),
       child: Row(
         children: [
@@ -272,19 +306,7 @@ class _HomeHeader extends StatelessWidget {
               context,
               MaterialPageRoute(builder: (_) => const ProfilePage()),
             ),
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: scheme.primary.withAlpha(40),
-                border: Border.all(
-                  color: scheme.primary.withAlpha(80),
-                  width: 1.5,
-                ),
-              ),
-              child: Icon(Icons.person, size: 22, color: scheme.primary),
-            ),
+            child: UserAvatar(profile: _me, sizePx: 40),
           ),
           const SizedBox(width: 12),
           Expanded(

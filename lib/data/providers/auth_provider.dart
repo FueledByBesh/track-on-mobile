@@ -26,6 +26,11 @@ class AuthProvider extends ChangeNotifier {
 
   AuthProvider(this._api);
 
+  /// Fires whenever the user becomes logged-out (explicit sign-out or
+  /// token-expiry). Wired in main.dart to clear the HTTP response cache
+  /// so the next user can't see the previous session's data.
+  Future<void> Function()? onSignedOut;
+
   bool get isLoading => _isLoading;
   bool get isLoggedIn => _isLoggedIn;
   bool get showExpiredMessage => _showExpiredMessage;
@@ -39,8 +44,18 @@ class AuthProvider extends ChangeNotifier {
     _isLoggedIn = false;
     if (wasLoggedIn) {
       _showExpiredMessage = true;
+      // Fire-and-forget; the UI doesn't need to wait for the cache wipe.
+      unawaited(_invokeSignedOutHook());
     }
     notifyListeners();
+  }
+
+  Future<void> _invokeSignedOutHook() async {
+    try {
+      await onSignedOut?.call();
+    } catch (e) {
+      debugPrint('onSignedOut hook threw: $e');
+    }
   }
 
   /// AuthWrapper calls this after showing the expired-session toast so the
@@ -183,6 +198,7 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('Logout endpoint failed, clearing local state anyway: $e');
     }
     await ApiClient.clearTokens();
+    await _invokeSignedOutHook();
     _isLoggedIn = false;
     notifyListeners();
   }

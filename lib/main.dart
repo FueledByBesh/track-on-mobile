@@ -29,6 +29,9 @@ import 'data/services/post_service.dart';
 import 'data/services/user_post_service.dart';
 import 'data/services/user_service.dart';
 import 'data/services/notification_service.dart';
+import 'data/services/cache_store.dart';
+import 'data/services/cached_http.dart';
+import 'data/services/storage_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'ui/myapp.dart';
@@ -62,12 +65,16 @@ Future<void> main() async {
   // with local state (club detail, settings, profile, notification
   // prefs) can call the API directly without proxying through a
   // ChangeNotifier.
+  final cacheStore = CacheStore();
+  final cachedHttp = CachedHttp(dio: apiClient.dio, store: cacheStore);
+
   final clubApiService = ClubApiService(apiClient);
   final clubPostApiService = ClubPostApiService(apiClient);
   final userPostApiService = UserPostApiService(apiClient);
   final postApiService = PostApiService(apiClient);
-  final userApiService = UserApiService(apiClient);
+  final userApiService = UserApiService(apiClient, cachedHttp, cacheStore);
   final followApiService = FollowApiService(apiClient);
+  final storageApiService = StorageApiService(apiClient);
 
   runApp(
     MultiProvider(
@@ -80,6 +87,9 @@ Future<void> main() async {
         Provider<PostApiService>.value(value: postApiService),
         Provider<UserApiService>.value(value: userApiService),
         Provider<FollowApiService>.value(value: followApiService),
+        Provider<CacheStore>.value(value: cacheStore),
+        Provider<CachedHttp>.value(value: cachedHttp),
+        Provider<StorageApiService>.value(value: storageApiService),
         ChangeNotifierProvider(
           create: (_) {
             final authProvider = AuthProvider(apiClient);
@@ -87,6 +97,9 @@ Future<void> main() async {
             // whole UI needs to bounce to the login page. Wire it here,
             // once both objects exist.
             apiClient.onAuthExpired = authProvider.handleAuthExpired;
+            // Wipe the HTTP response cache on sign-out / auth-expiry so
+            // the next user doesn't inherit the previous session's data.
+            authProvider.onSignedOut = cacheStore.clear;
             return authProvider;
           },
         ),

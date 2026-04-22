@@ -1,11 +1,11 @@
-/// Full user profile as returned by the backend profile endpoints
-/// (`/api/users/me`, `/api/users/{id}`, `/api/users/by-handle/{handle}`).
+/// Static profile fields as returned by `/api/users/me`,
+/// `/api/users/{id}`, `/api/users/by-handle/{handle}`. Changes only
+/// when the user themselves edits their row — so it's cacheable with
+/// a long TTL and backed by an ETag from `users.updated_at`.
 ///
-/// Used both for "who am I" (auth session) and "someone else's profile."
-/// Fields like [email] are null for non-self views so we don't leak
-/// contact info. Viewer-relative flags ([isSelf], [isFollowing],
-/// [hasPendingFollowRequest]) drive the action buttons on the profile
-/// page.
+/// Counts and viewer-relative follow flags are NOT here — see
+/// [UserStats], which is served by the companion stats endpoints and
+/// refetched aggressively.
 class UserProfile {
   final String id;
   final String firstName;
@@ -21,16 +21,8 @@ class UserProfile {
   final String? location;
   final String? avatarImageUrl;
 
-  // ----- counts -----
-  final int postsCount;
-  final int followersCount;
-  final int followingCount;
-  final int clubsCount;
-
-  // ----- viewer-relative -----
+  /// True iff this is the viewer's own profile.
   final bool isSelf;
-  final bool isFollowing;
-  final bool hasPendingFollowRequest;
 
   /// Profile owner's privacy toggle. When false + not following + not
   /// self, the content tabs should render a lock state.
@@ -50,13 +42,7 @@ class UserProfile {
     this.bio,
     this.location,
     this.avatarImageUrl,
-    this.postsCount = 0,
-    this.followersCount = 0,
-    this.followingCount = 0,
-    this.clubsCount = 0,
     this.isSelf = false,
-    this.isFollowing = false,
-    this.hasPendingFollowRequest = false,
     this.isProfilePublic = true,
     this.role = 'USER',
   });
@@ -79,46 +65,90 @@ class UserProfile {
       location: json['location'] as String?,
       avatarImageUrl:
           json['avatar_image_url'] as String? ?? json['picture'] as String?,
-      postsCount: json['posts_count'] ?? 0,
-      followersCount: json['followers_count'] ?? 0,
-      followingCount: json['following_count'] ?? 0,
-      clubsCount: json['clubs_count'] ?? 0,
       isSelf: json['is_self'] ?? false,
-      isFollowing: json['is_following'] ?? false,
-      hasPendingFollowRequest: json['has_pending_follow_request'] ?? false,
       isProfilePublic: json['is_profile_public'] ?? true,
       role: json['role'] ?? 'USER',
     );
   }
 
   UserProfile copyWith({
+    String? firstName,
+    String? lastName,
+    String? handle,
     String? bio,
     String? location,
     String? avatarImageUrl,
-    bool? isFollowing,
-    bool? hasPendingFollowRequest,
-    int? followersCount,
-    int? followingCount,
+    bool? isProfilePublic,
   }) {
     return UserProfile(
       id: id,
-      firstName: firstName,
-      lastName: lastName,
-      handle: handle,
+      firstName: firstName ?? this.firstName,
+      lastName: lastName ?? this.lastName,
+      handle: handle ?? this.handle,
       email: email,
       bio: bio ?? this.bio,
       location: location ?? this.location,
       avatarImageUrl: avatarImageUrl ?? this.avatarImageUrl,
-      postsCount: postsCount,
+      isSelf: isSelf,
+      isProfilePublic: isProfilePublic ?? this.isProfilePublic,
+      role: role,
+    );
+  }
+}
+
+/// Live counts + viewer-relative follow flags. Served by the companion
+/// `/api/users/*/stats` endpoints. Small payload, refetched often;
+/// cached with stale-while-revalidate semantics so the profile page
+/// shows the previous values instantly on reopen while the network
+/// updates them in the background.
+class UserStats {
+  final String userId;
+  final int postsCount;
+  final int followersCount;
+  final int followingCount;
+  final int clubsCount;
+  final bool isFollowing;
+  final bool hasPendingFollowRequest;
+
+  const UserStats({
+    required this.userId,
+    this.postsCount = 0,
+    this.followersCount = 0,
+    this.followingCount = 0,
+    this.clubsCount = 0,
+    this.isFollowing = false,
+    this.hasPendingFollowRequest = false,
+  });
+
+  factory UserStats.fromJson(Map<String, dynamic> json) {
+    return UserStats(
+      userId: json['user_id'] ?? '',
+      postsCount: json['posts_count'] ?? 0,
+      followersCount: json['followers_count'] ?? 0,
+      followingCount: json['following_count'] ?? 0,
+      clubsCount: json['clubs_count'] ?? 0,
+      isFollowing: json['is_following'] ?? false,
+      hasPendingFollowRequest: json['has_pending_follow_request'] ?? false,
+    );
+  }
+
+  UserStats copyWith({
+    int? postsCount,
+    int? followersCount,
+    int? followingCount,
+    int? clubsCount,
+    bool? isFollowing,
+    bool? hasPendingFollowRequest,
+  }) {
+    return UserStats(
+      userId: userId,
+      postsCount: postsCount ?? this.postsCount,
       followersCount: followersCount ?? this.followersCount,
       followingCount: followingCount ?? this.followingCount,
-      clubsCount: clubsCount,
-      isSelf: isSelf,
+      clubsCount: clubsCount ?? this.clubsCount,
       isFollowing: isFollowing ?? this.isFollowing,
       hasPendingFollowRequest:
           hasPendingFollowRequest ?? this.hasPendingFollowRequest,
-      isProfilePublic: isProfilePublic,
-      role: role,
     );
   }
 }
