@@ -75,6 +75,7 @@ Future<void> main() async {
   final userApiService = UserApiService(apiClient, cachedHttp, cacheStore);
   final followApiService = FollowApiService(apiClient);
   final storageApiService = StorageApiService(apiClient);
+  final activityApiService = ActivityApiService(apiClient);
 
   runApp(
     MultiProvider(
@@ -90,6 +91,7 @@ Future<void> main() async {
         Provider<CacheStore>.value(value: cacheStore),
         Provider<CachedHttp>.value(value: cachedHttp),
         Provider<StorageApiService>.value(value: storageApiService),
+        Provider<ActivityApiService>.value(value: activityApiService),
         ChangeNotifierProvider(
           create: (_) {
             final authProvider = AuthProvider(apiClient);
@@ -110,16 +112,12 @@ Future<void> main() async {
           },
         ),
         ChangeNotifierProvider(
-          create: (_) {
-            final activityApi = ActivityApiService(apiClient);
-            return ActivityHistoryProvider(activityApi);
-          },
+          create: (_) => ActivityHistoryProvider(activityApiService),
         ),
         ChangeNotifierProxyProvider<ActivityHistoryProvider, ActivityProvider>(
           create: (ctx) {
-            final activityApi = ActivityApiService(apiClient);
             final recorder = ActivityRecorder(GeolocatorLocationTracker());
-            final sync = ActivitySyncService(activityApi);
+            final sync = ActivitySyncService(activityApiService);
             return ActivityProvider(
               recorder,
               sync,

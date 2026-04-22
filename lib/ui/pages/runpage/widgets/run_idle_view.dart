@@ -32,8 +32,10 @@ class RunIdleView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final topInset = MediaQuery.of(context).padding.top;
     final bottomInset = MediaQuery.of(context).padding.bottom;
+    // Sit the button stack above the Start row + its padding + a gap.
+    const startRowHeight = 56.0;
+    const bottomStackOffset = startRowHeight + 8 + 16;
 
     return Stack(
       children: [
@@ -46,15 +48,28 @@ class RunIdleView extends StatelessWidget {
           controller: mapController,
           cameraMode: CameraMode.free,
         ),
-        // Top-right floating buttons (history + my location)
+        // Bottom-right floating buttons (history / compass / my location).
+        // Order top→bottom: history, compass, location. The bottom
+        // button sits closest to the thumb, the less-common actions
+        // stack upward.
         Positioned(
-          top: 16 + topInset,
           right: 16,
+          bottom: bottomInset + bottomStackOffset,
           child: Column(
             children: [
               _FloatingIconButton(icon: Icons.history, onTap: onShowHistory),
               const SizedBox(height: 12),
-              _FloatingIconButton(icon: Icons.my_location, onTap: onMyLocation),
+              _FloatingIconButton(
+                icon: Icons.explore_outlined,
+                onTap: mapController.resetNorth,
+                tooltip: 'Reset north',
+              ),
+              const SizedBox(height: 12),
+              _FloatingIconButton(
+                icon: Icons.my_location,
+                onTap: onMyLocation,
+                tooltip: 'My location',
+              ),
             ],
           ),
         ),
@@ -203,12 +218,17 @@ class _StartButton extends StatelessWidget {
 class _FloatingIconButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
+  final String? tooltip;
 
-  const _FloatingIconButton({required this.icon, required this.onTap});
+  const _FloatingIconButton({
+    required this.icon,
+    required this.onTap,
+    this.tooltip,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    final button = GestureDetector(
       onTap: onTap,
       child: Container(
         width: 48,
@@ -227,5 +247,6 @@ class _FloatingIconButton extends StatelessWidget {
         child: Icon(icon, color: Theme.of(context).colorScheme.primary, size: 22),
       ),
     );
+    return tooltip != null ? Tooltip(message: tooltip!, child: button) : button;
   }
 }

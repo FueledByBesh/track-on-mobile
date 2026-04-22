@@ -117,7 +117,13 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   Widget build(BuildContext context) {
     final connectivity = context.watch<ConnectivityProvider>();
-    final isRecording = context.watch<ActivityProvider>().isTracking;
+    final activity = context.watch<ActivityProvider>();
+    final isRecording = activity.isTracking;
+    // Hide the bottom nav only while a recording is *actively* running.
+    // Paused counts as still-in-session but the user is stationary, so
+    // we bring the nav back so they can peek at other tabs without
+    // having to resume first.
+    final activelyRecording = activity.isTracking && !activity.isPaused;
 
     return Scaffold(
       extendBody: true,
@@ -177,8 +183,16 @@ class _MainNavigationState extends State<MainNavigation> {
                 ),
               ),
             ),
-          // Bottom navigation bar — theme-aware
-          Builder(builder: (context) {
+          // Bottom navigation bar — theme-aware. Collapsed via
+          // AnimatedSize when a recording is actively running so the
+          // Run tab gets the full screen. Paused brings it back.
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: activelyRecording
+                ? const SizedBox(width: double.infinity)
+                : Builder(builder: (context) {
             final scheme = Theme.of(context).colorScheme;
             final isDark = Theme.of(context).brightness == Brightness.dark;
             final navBg = isDark
@@ -255,6 +269,7 @@ class _MainNavigationState extends State<MainNavigation> {
               ),
             );
           }),
+          ),
         ],
       ),
     );

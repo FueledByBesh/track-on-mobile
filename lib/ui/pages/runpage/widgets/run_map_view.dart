@@ -24,6 +24,20 @@ class RunMapViewController {
   void recenterTo(MapPoint position, {double zoom = 17}) {
     _state?._recenterTo(position, zoom);
   }
+
+  /// Rotate the map so the top of the viewport points north. Keeps the
+  /// current center + zoom; only bearing changes. No-op before the map
+  /// has attached.
+  void resetNorth() {
+    _state?._resetNorth();
+  }
+
+  /// Re-fit the camera to the current route bounds (using the same
+  /// padding the auto-fit used). Useful for a "recenter" button on
+  /// views that render a static route.
+  void fitToRoute() {
+    _state?._fitCameraToRoute();
+  }
 }
 
 /// MapBox-backed map view. The public API uses MapPoint to stay
@@ -40,6 +54,23 @@ class RunMapView extends StatefulWidget {
   final VoidCallback? onRetry;
   final RunMapViewController? controller;
   final CameraMode cameraMode;
+
+  /// When true, the first time the view has both a ready map and a
+  /// non-trivial route, it animates the camera to fit the route
+  /// within the viewport. Used by the activity-detail page where
+  /// showing the whole track from the outset is the point. Idle +
+  /// recording views keep this off because they want a fixed zoom.
+  final bool fitToBoundsOnLoad;
+
+  /// Extra padding applied when auto-fitting. Use the bottom inset
+  /// to keep the route clear of a draggable sheet that covers the
+  /// lower portion of the map.
+  final EdgeInsets fitBoundsPadding;
+
+  /// Show the pulsing user-location dot. Off on the activity-detail
+  /// page where the dot is irrelevant (the activity happened in the
+  /// past; the user's current position adds noise to the view).
+  final bool showUserLocation;
 
   /// Time after a user gesture before auto-follow resumes (in locked mode).
   static const Duration softLockTimeout = Duration(seconds: 5);
@@ -62,6 +93,9 @@ class RunMapView extends StatefulWidget {
     this.onRetry,
     this.controller,
     this.cameraMode = CameraMode.free,
+    this.fitToBoundsOnLoad = false,
+    this.fitBoundsPadding = const EdgeInsets.all(40),
+    this.showUserLocation = true,
   });
 
   @override
@@ -83,6 +117,7 @@ class _RunMapViewState extends State<RunMapView> {
 
   bool _styleReady = false;
   bool _autoFollowSuspended = false;
+  bool _didAutoFit = false;
   int _accentColorInt = 0xFF6B5FFF;
   Timer? _resumeFollowTimer;
 
@@ -120,6 +155,7 @@ class _RunMapViewState extends State<RunMapView> {
     // rebuild is cheap.
     if (!_segmentsEqual(widget.routeSegments, oldWidget.routeSegments)) {
       _syncPolylines();
+      _maybeAutoFit();
     }
   }
 
@@ -135,13 +171,15 @@ class _RunMapViewState extends State<RunMapView> {
   Future<void> _onMapCreated(MapboxMap mapboxMap) async {
     _mapboxMap = mapboxMap;
 
-    // Show user location dot (driven by OS GPS).
+    // Show user location dot (driven by OS GPS). Skipped on pages
+    // like the activity detail where "where you are now" is irrelevant
+    // and would overlap the rendered past-route.
     // pulsingColor is an ARGB int, not a Color object.
     final accentInt = Theme.of(context).colorScheme.primary.toARGB32();
     await mapboxMap.location.updateSettings(
       LocationComponentSettings(
-        enabled: true,
-        pulsingEnabled: true,
+        enabled: widget.showUserLocation,
+        pulsingEnabled: widget.showUserLocation,
         pulsingColor: accentInt,
       ),
     );
@@ -162,6 +200,7 @@ class _RunMapViewState extends State<RunMapView> {
     _applyCameraMode();
     if (widget.routeSegments.any((s) => s.length >= 2)) {
       _syncPolylines();
+      _maybeAutoFit();
     }
   }
 
@@ -209,6 +248,76 @@ class _RunMapViewState extends State<RunMapView> {
       ),
       MapAnimationOptions(duration: 500),
     );
+  }
+
+  void _resetNorth() {
+    if (_mapboxMap == null) return;
+    _mapboxMap!.easeTo(
+      CameraOptions(bearing: 0),
+      MapAnimationOptions(duration: 400),
+    );
+  }
+
+  /// One-shot helper used on first layout when [fitToBoundsOnLoad] is
+  /// enabled. Guards ensure the user's post-load pan/zoom isn't
+  /// overridden on subsequent rebuilds.
+  void _maybeAutoFit() {
+    if (_didAutoFit) return;
+    if (!widget.fitToBoundsOnLoad) return;
+    _fitCameraToRoute();
+  }
+
+  /// Animate the camera to fit the bounding box of the current route.
+  /// Safe to call imperatively (e.g. from a "recenter" button). No-op
+  /// if the map isn't ready or the route is too short. Sets the
+  /// [_didAutoFit] guard so the auto-fit path doesn't double-animate.
+  Future<void> _fitCameraToRoute() async {
+    if (_mapboxMap == null) return;
+    final allPoints = <MapPoint>[];
+    for (final seg in widget.routeSegments) {
+      allPoints.addAll(seg);
+    }
+    if (allPoints.length < 2) return;
+
+    double minLat = allPoints.first.lat;
+    double maxLat = minLat;
+    double minLon = allPoints.first.lon;
+    double maxLon = minLon;
+    for (final p in allPoints) {
+      if (p.lat < minLat) minLat = p.lat;
+      if (p.lat > maxLat) maxLat = p.lat;
+      if (p.lon < minLon) minLon = p.lon;
+      if (p.lon > maxLon) maxLon = p.lon;
+    }
+
+    final bounds = CoordinateBounds(
+      southwest: Point(coordinates: Position(minLon, minLat)),
+      northeast: Point(coordinates: Position(maxLon, maxLat)),
+      infiniteBounds: false,
+    );
+    final pad = widget.fitBoundsPadding;
+    final edgeInsets = MbxEdgeInsets(
+      top: pad.top,
+      left: pad.left,
+      bottom: pad.bottom,
+      right: pad.right,
+    );
+    try {
+      final camera = await _mapboxMap!.cameraForCoordinateBounds(
+        bounds,
+        edgeInsets,
+        0,
+        0,
+        null,
+        null,
+      );
+      if (_mapboxMap == null) return;
+      _didAutoFit = true;
+      _mapboxMap!.easeTo(camera, MapAnimationOptions(duration: 500));
+    } catch (_) {
+      // Camera API can reject if map size is 0 during layout; the
+      // next didUpdateWidget / onMapCreated will retry.
+    }
   }
 
   void _onUserGesture() {

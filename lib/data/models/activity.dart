@@ -8,6 +8,11 @@ class ActivitySummary {
   final double? avgPaceMinPerKm;
   final int? durationSeconds;
 
+  /// Google-polyline-encoded simplified route, computed server-side
+  /// on finalize. Null for legacy activities not yet backfilled — the
+  /// UI falls back to a neutral placeholder in that case.
+  final String? previewPolyline;
+
   ActivitySummary({
     required this.id,
     required this.activityType,
@@ -16,17 +21,19 @@ class ActivitySummary {
     required this.distanceKm,
     this.avgPaceMinPerKm,
     this.durationSeconds,
+    this.previewPolyline,
   });
 
   factory ActivitySummary.fromJson(Map<String, dynamic> json) {
     return ActivitySummary(
       id: json['id'].toString(),
       activityType: json['activity_type'] ?? 'RUNNING',
-      startTime: json['start_time'] ?? '',
-      endTime: json['end_time'],
+      startTime: json['start_time'] ?? json['started_at_local'] ?? '',
+      endTime: json['end_time'] ?? json['ended_at_local'] as String?,
       distanceKm: (json['distance_km'] ?? 0).toDouble(),
       avgPaceMinPerKm: (json['avg_pace_min_per_km'] as num?)?.toDouble(),
       durationSeconds: json['duration_seconds'],
+      previewPolyline: json['preview_polyline'] as String?,
     );
   }
 

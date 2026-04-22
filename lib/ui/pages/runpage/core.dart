@@ -10,7 +10,7 @@ import 'widgets/activity_type_selector.dart';
 import 'widgets/run_idle_view.dart';
 import 'widgets/run_map_view.dart';
 import 'widgets/run_recording_view.dart';
-import 'widgets/running_history_sheet.dart';
+import 'run_history_page.dart';
 
 class RunPage extends StatefulWidget {
   const RunPage({super.key});
@@ -133,10 +133,41 @@ class _RunPageState extends State<RunPage> {
     }
   }
 
-  void _showHistory() {
-    showModalBottomSheet(
+  /// Destructive — drops the in-flight recording entirely, no server
+  /// upload. Gated behind a confirmation dialog because there's no
+  /// undo path and the user could have been running for an hour.
+  Future<void> _cancel() async {
+    final provider = context.read<ActivityProvider>();
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => const RunningHistorySheet(),
+      builder: (ctx) => AlertDialog(
+        title: const Text('Discard this activity?'),
+        content: const Text(
+          "You'll lose everything you've recorded so far. "
+          "This can't be undone.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep it'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await provider.discard();
+    }
+  }
+
+  void _showHistory() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const RunHistoryPage()),
     );
   }
 
@@ -159,6 +190,7 @@ class _RunPageState extends State<RunPage> {
               onPause: () => activityProvider.pause(),
               onResume: () => activityProvider.resume(),
               onStop: _stop,
+              onCancel: _cancel,
               onMyLocation: _recenter,
             )
           : RunIdleView(
