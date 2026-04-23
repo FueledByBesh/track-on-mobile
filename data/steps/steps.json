@@ -1,0 +1,7 @@
+{
+  "time_interval": {
+    "start": "start timestamp",
+    "end": "end timestamp"
+  },
+  "steps_value": "count of steps done in this period"
+}

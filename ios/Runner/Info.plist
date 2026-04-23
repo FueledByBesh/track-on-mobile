@@ -47,6 +47,23 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>TrackOn needs your location to show your position on the map and track your runs.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>TrackOn needs your location to track your runs in the background.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>trackon</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>trackon</string>
+			</array>
+		</dict>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

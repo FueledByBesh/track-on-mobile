@@ -1,0 +1,15 @@
+{
+  "name": "workout_name",
+  "category": "workout_category",
+  "muscles": [
+    {
+      "name": "muscle_name",
+      "percentage": "how much this muscle is involved in the workout, e.g. 50 for 50%"
+    }
+  ],
+  "approx_duration": "duration in minutes for an average person to complete the workout according to reps and sets",
+  "rec_reps": "recommended_reps",
+  "rec_sets": "recommended_sets",
+  "tutorial_link": "workout_tutorial_link_to_youtube",
+  "rest_time": "rest time between sets in seconds"
+}
