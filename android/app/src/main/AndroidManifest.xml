@@ -6,7 +6,7 @@
     <!-- Runtime-granted on Android 13+ so notifications can reach the OS tray. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
-        android:label="trackon_vbccd"
+        android:label="TrackOn"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
