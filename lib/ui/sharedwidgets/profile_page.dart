@@ -1,8 +1,11 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/models/post.dart' as post_model;
 import 'package:trackon_mobile/data/models/user.dart';
+import 'package:trackon_mobile/data/models/user_activity_stats.dart';
 import 'package:trackon_mobile/data/providers/groups_provider.dart';
 import 'package:trackon_mobile/data/services/club_post_service.dart';
 import 'package:trackon_mobile/data/services/follow_service.dart';
@@ -583,34 +586,570 @@ class _LockedTab extends StatelessWidget {
 // tab shows a lightweight "coming soon" even for self — the Home page
 // is the canonical place to see your own activities today.
 
-class _ActivityTab extends StatelessWidget {
+class _ActivityTab extends StatefulWidget {
   final UserProfile profile;
   final UserStats stats;
   const _ActivityTab({required this.profile, required this.stats});
 
   @override
+  State<_ActivityTab> createState() => _ActivityTabState();
+}
+
+class _ActivityTabState extends State<_ActivityTab> {
+  static const int _windowDays = 30;
+
+  UserActivityStats? _data;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_canViewContent(widget.profile, widget.stats)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    } else {
+      _loading = false;
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final api = context.read<UserApiService>();
+      final data = widget.profile.isSelf
+          ? await api.getMyActivityStats(days: _windowDays)
+          : await api.getActivityStatsById(
+              widget.profile.id,
+              days: _windowDays,
+            );
+      if (!mounted) return;
+      setState(() {
+        _data = data;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Could not load activity stats';
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (!_canViewContent(profile, stats)) {
+    if (!_canViewContent(widget.profile, widget.stats)) {
       return const _LockedTab(
         icon: Icons.lock_outline,
         label: 'Activity is private',
         detail: 'Follow this user to see their runs and workouts.',
       );
     }
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.directions_run,
-                size: 48, color: scheme.onSurfaceVariant),
+            const Icon(Icons.error_outline, size: 40),
+            const SizedBox(height: 8),
+            Text(_error!),
             const SizedBox(height: 12),
-            Text('Activity feed coming soon',
-                style: TextStyle(color: scheme.onSurfaceVariant)),
+            TextButton(onPressed: _load, child: const Text('Retry')),
           ],
         ),
+      );
+    }
+    final d = _data;
+    if (d == null || d.isEmpty) {
+      final scheme = Theme.of(context).colorScheme;
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.directions_run,
+                  size: 48, color: scheme.onSurfaceVariant),
+              const SizedBox(height: 12),
+              Text(
+                widget.profile.isSelf
+                    ? 'No activity in the last $_windowDays days.'
+                    : 'No recent activity.',
+                style: TextStyle(color: scheme.onSurfaceVariant),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: [
+        _WindowLabel(days: d.windowDays),
+        const SizedBox(height: 10),
+        _HeadlineStrip(totals: d.totals),
+        const SizedBox(height: 16),
+        _Section(
+          title: 'Weekly distance',
+          child: _WeeklyBarChart(weekly: d.weekly),
+        ),
+        const SizedBox(height: 12),
+        if (d.types.isNotEmpty)
+          _Section(
+            title: 'By activity type',
+            child: _TypeDonut(types: d.types),
+          ),
+      ],
+    );
+  }
+}
+
+// ============ ACTIVITY-TAB WIDGETS ============
+
+class _WindowLabel extends StatelessWidget {
+  final int days;
+  const _WindowLabel({required this.days});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Text(
+      'LAST $days DAYS',
+      style: TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1.2,
+        color: scheme.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
+class _HeadlineStrip extends StatelessWidget {
+  final ActivityTotals totals;
+  const _HeadlineStrip({required this.totals});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    // 2-up grid so long values (e.g. 3-digit km) don't crush each other.
+    return LayoutBuilder(
+      builder: (context, c) {
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _headlineCell(
+              scheme: scheme,
+              width: (c.maxWidth - 10) / 2,
+              label: 'Distance',
+              value: '${totals.distanceKm.toStringAsFixed(1)} km',
+              icon: Icons.route,
+            ),
+            _headlineCell(
+              scheme: scheme,
+              width: (c.maxWidth - 10) / 2,
+              label: 'Sessions',
+              value: '${totals.sessions}',
+              icon: Icons.fitness_center,
+            ),
+            _headlineCell(
+              scheme: scheme,
+              width: (c.maxWidth - 10) / 2,
+              label: 'Time',
+              value: _formatDuration(totals.durationSeconds),
+              icon: Icons.timer_outlined,
+            ),
+            _headlineCell(
+              scheme: scheme,
+              width: (c.maxWidth - 10) / 2,
+              label: 'Longest',
+              value: '${totals.longestKm.toStringAsFixed(1)} km',
+              icon: Icons.emoji_events_outlined,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _headlineCell({
+    required ColorScheme scheme,
+    required double width,
+    required String label,
+    required String value,
+    required IconData icon,
+  }) {
+    return SizedBox(
+      width: width,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: scheme.primary.withAlpha(15),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 16, color: scheme.primary),
+                const SizedBox(width: 6),
+                Text(
+                  label.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 10,
+                    letterSpacing: 1.0,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: scheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _formatDuration(int totalSeconds) {
+    final h = totalSeconds ~/ 3600;
+    final m = (totalSeconds % 3600) ~/ 60;
+    if (h > 0) return '${h}h ${m}m';
+    return '${m}m';
+  }
+}
+
+class _WeeklyBarChart extends StatelessWidget {
+  final List<ActivityWeekBucket> weekly;
+  const _WeeklyBarChart({required this.weekly});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (weekly.isEmpty) {
+      return SizedBox(
+        height: 120,
+        child: Center(
+          child: Text(
+            'No weekly data',
+            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+          ),
+        ),
+      );
+    }
+
+    final maxY = weekly
+            .map((w) => w.totalKm)
+            .fold<double>(0, (a, b) => a > b ? a : b) *
+        1.15;
+
+    // Colors reused in the donut below so the visual mapping stays
+    // consistent: run=primary, bike=tertiary, walk=secondary.
+    final runColor = scheme.primary;
+    final bikeColor = scheme.tertiary;
+    final walkColor = scheme.secondary;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 180,
+          child: BarChart(
+            BarChartData(
+              maxY: maxY > 0 ? maxY : 1,
+              barGroups: [
+                for (int i = 0; i < weekly.length; i++)
+                  BarChartGroupData(
+                    x: i,
+                    barRods: [
+                      BarChartRodData(
+                        toY: weekly[i].totalKm,
+                        width: 10,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(3),
+                        ),
+                        rodStackItems: [
+                          BarChartRodStackItem(
+                              0, weekly[i].runningKm, runColor),
+                          BarChartRodStackItem(
+                            weekly[i].runningKm,
+                            weekly[i].runningKm + weekly[i].bikingKm,
+                            bikeColor,
+                          ),
+                          BarChartRodStackItem(
+                            weekly[i].runningKm + weekly[i].bikingKm,
+                            weekly[i].totalKm,
+                            walkColor,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+              ],
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                getDrawingHorizontalLine: (_) => FlLine(
+                  color: scheme.outlineVariant.withAlpha(80),
+                  strokeWidth: 1,
+                ),
+              ),
+              titlesData: FlTitlesData(
+                rightTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                topTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 24,
+                    interval: 1,
+                    getTitlesWidget: (value, _) {
+                      final idx = value.toInt();
+                      if (idx < 0 || idx >= weekly.length) {
+                        return const SizedBox.shrink();
+                      }
+                      // Only label every other bar so they don't crush
+                      // on narrow screens. Show the week-start in M/d.
+                      if (weekly.length > 6 && idx % 2 != 0) {
+                        return const SizedBox.shrink();
+                      }
+                      final date =
+                          DateTime.tryParse(weekly[idx].weekStart);
+                      if (date == null) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          DateFormat('M/d').format(date),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 34,
+                    getTitlesWidget: (value, _) => Text(
+                      value.toInt() == 0
+                          ? ''
+                          : '${value.toInt()}',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              borderData: FlBorderData(show: false),
+              barTouchData: BarTouchData(enabled: false),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _LegendDot(color: runColor, label: 'Run'),
+            const SizedBox(width: 12),
+            _LegendDot(color: bikeColor, label: 'Bike'),
+            const SizedBox(width: 12),
+            _LegendDot(color: walkColor, label: 'Walk'),
+            const Spacer(),
+            Text(
+              'km',
+              style: TextStyle(
+                fontSize: 11,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _TypeDonut extends StatelessWidget {
+  final List<ActivityTypeShare> types;
+  const _TypeDonut({required this.types});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final total = types.fold<double>(0, (a, b) => a + b.distanceKm);
+    if (total <= 0) {
+      return SizedBox(
+        height: 120,
+        child: Center(
+          child: Text(
+            'No type breakdown',
+            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+          ),
+        ),
+      );
+    }
+
+    final slices = types.map((t) {
+      final pct = (t.distanceKm / total) * 100;
+      return PieChartSectionData(
+        value: t.distanceKm,
+        color: _typeColor(t.activityType, scheme),
+        title: pct >= 8 ? '${pct.toStringAsFixed(0)}%' : '',
+        radius: 42,
+        titleStyle: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+        ),
+      );
+    }).toList();
+
+    return Row(
+      children: [
+        SizedBox(
+          width: 140,
+          height: 140,
+          child: PieChart(
+            PieChartData(
+              sections: slices,
+              centerSpaceRadius: 30,
+              sectionsSpace: 2,
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final t in types)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: _LegendDot(
+                    color: _typeColor(t.activityType, scheme),
+                    label:
+                        '${_typeLabel(t.activityType)} · ${t.distanceKm.toStringAsFixed(1)} km',
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  static Color _typeColor(String type, ColorScheme scheme) {
+    switch (type) {
+      case 'RUNNING':
+        return scheme.primary;
+      case 'BIKING':
+        return scheme.tertiary;
+      case 'WALKING':
+        return scheme.secondary;
+      default:
+        return scheme.onSurfaceVariant;
+    }
+  }
+
+  static String _typeLabel(String type) {
+    switch (type) {
+      case 'RUNNING':
+        return 'Running';
+      case 'BIKING':
+        return 'Biking';
+      case 'WALKING':
+        return 'Walking';
+      default:
+        return type;
+    }
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _LegendDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: scheme.onSurface,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Section extends StatelessWidget {
+  final String title;
+  final Widget child;
+  const _Section({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardTheme.color ?? scheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 10),
+          child,
+        ],
       ),
     );
   }

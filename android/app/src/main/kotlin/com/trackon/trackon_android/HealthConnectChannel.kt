@@ -1,4 +1,4 @@
-package com.example.trackon_mobile
+package com.trackon.trackon_android
 
 import android.content.Context
 import androidx.activity.ComponentActivity

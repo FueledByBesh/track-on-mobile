@@ -201,9 +201,7 @@ class _GeneralTabState extends State<_GeneralTab> {
                     // Backend couples private→approval-on on first
                     // flip; mirror locally so the UI stays in sync
                     // without a second round-trip.
-                    final optimistic = UserSettings(
-                      defaultStepGoal:
-                          _serverSettings!.defaultStepGoal,
+                    final optimistic = _serverSettings!.copyWith(
                       isProfilePublic: v,
                       requireFollowApproval: v
                           ? _serverSettings!.requireFollowApproval
@@ -222,16 +220,33 @@ class _GeneralTabState extends State<_GeneralTab> {
                       'New follow requests wait until you accept or decline.',
                   value: _serverSettings!.requireFollowApproval,
                   onChanged: (v) {
-                    final optimistic = UserSettings(
-                      defaultStepGoal:
-                          _serverSettings!.defaultStepGoal,
-                      isProfilePublic:
-                          _serverSettings!.isProfilePublic,
-                      requireFollowApproval: v,
-                    );
                     _patchSettings(
                       UserSettings.patch(requireFollowApproval: v),
-                      optimistic,
+                      _serverSettings!.copyWith(requireFollowApproval: v),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          _SectionHeader(title: 'Notifications'),
+          AbsorbPointer(
+            absorbing: _savingSetting,
+            child: Column(
+              children: [
+                _SettingsTileSwitch(
+                  icon: Icons.notifications_active_outlined,
+                  title: 'Follow notifications',
+                  subtitle:
+                      'Get notified when someone follows you or accepts your request.',
+                  value: _serverSettings!.followNotificationsEnabled,
+                  onChanged: (v) {
+                    _patchSettings(
+                      UserSettings.patch(followNotificationsEnabled: v),
+                      _serverSettings!.copyWith(
+                        followNotificationsEnabled: v,
+                      ),
                     );
                   },
                 ),
@@ -598,6 +613,16 @@ class _PermissionsTab extends StatelessWidget {
           title: 'Fitness',
           subtitle: 'Access step count from Health Connect',
           permission: AppPermission.fitness,
+          provider: provider,
+        ),
+        const SizedBox(height: 24),
+        _SectionHeader(title: 'Notifications'),
+        _PermissionTile(
+          icon: Icons.notifications_outlined,
+          title: 'Push notifications',
+          subtitle:
+              'Allow TrackOn to show alerts for follows, clubs, and activity.',
+          permission: AppPermission.notifications,
           provider: provider,
         ),
       ],

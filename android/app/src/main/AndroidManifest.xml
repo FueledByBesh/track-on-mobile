@@ -3,6 +3,8 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.activity_recognition"/>
     <uses-permission android:name="android.permission.health.READ_STEPS"/>
+    <!-- Runtime-granted on Android 13+ so notifications can reach the OS tray. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="trackon_vbccd"
         android:name="${applicationName}"

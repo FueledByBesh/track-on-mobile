@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/models/club.dart';
 import 'package:trackon_mobile/data/models/club_notification_prefs.dart';
+import 'package:trackon_mobile/data/providers/permission_provider.dart';
 import 'package:trackon_mobile/data/services/club_service.dart';
+import 'package:trackon_mobile/data/services/permission_service.dart';
 
 /// Club notification settings. Everyone (owner/admin/member) gets the
 /// top-level "allow notifications" + push + per-trigger toggles. Owners
@@ -26,11 +28,6 @@ class _ClubNotificationSettingsPageState
   late Future<ClubNotificationPrefs> _future;
   ClubNotificationPrefs? _prefs;
   bool _saving = false;
-
-  /// Mock OS-level push permission. Flip in debug to preview the
-  /// "permission denied" UX. Real wiring will read from
-  /// PermissionProvider once a PUSH permission enum value is added.
-  static const bool _osPushGranted = false;
 
   bool get _isStaff =>
       widget.club.userRole == ClubRole.owner ||
@@ -148,6 +145,13 @@ class _ClubNotificationSettingsPageState
   }
 
   Widget _buildEnabledSections(ColorScheme scheme, ClubNotificationPrefs p) {
+    // Live read from PermissionProvider — when the user flips the OS
+    // permission in settings and returns here, the provider refreshes
+    // on app-resume and this view rebuilds via context.watch.
+    final permission = context.watch<PermissionProvider>();
+    final osPushGranted =
+        permission.isGranted(AppPermission.notifications);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -157,13 +161,13 @@ class _ClubNotificationSettingsPageState
           subtitle:
               'Deliver as a system push notification, not just in-app.',
           value: p.allowPush,
-          enabled: _osPushGranted,
+          enabled: osPushGranted,
           onChanged: (v) => _save(
             ClubNotificationPrefs.patch(allowPush: v),
             _copyWith(p, allowPush: v),
           ),
         ),
-        if (!_osPushGranted) ...[
+        if (!osPushGranted) ...[
           const SizedBox(height: 6),
           const _Warning(
             message: 'Please allow push notifications in settings.',

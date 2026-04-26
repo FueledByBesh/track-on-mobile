@@ -22,4 +22,16 @@ class AppNotification {
       createdAt: json['created_at'] ?? '',
     );
   }
+
+  AppNotification copyWith({
+    bool? markedAsRead,
+  }) {
+    return AppNotification(
+      id: id,
+      title: title,
+      description: description,
+      markedAsRead: markedAsRead ?? this.markedAsRead,
+      createdAt: createdAt,
+    );
+  }
 }

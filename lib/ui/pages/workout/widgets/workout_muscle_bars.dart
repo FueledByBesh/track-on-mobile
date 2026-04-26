@@ -26,6 +26,7 @@ class _MuscleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
@@ -33,7 +34,7 @@ class _MuscleRow extends StatelessWidget {
           Expanded(
             child: Text(
               muscle.name,
-              style: const TextStyle(fontSize: 14),
+              style: TextStyle(fontSize: 14, color: scheme.onSurface),
             ),
           ),
           SizedBox(
@@ -43,7 +44,7 @@ class _MuscleRow extends StatelessWidget {
                 Container(
                   height: 8,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
+                    color: scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -52,7 +53,7 @@ class _MuscleRow extends StatelessWidget {
                   child: Container(
                     height: 8,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF6B5FFF),
+                      color: scheme.primary,
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),
@@ -68,7 +69,7 @@ class _MuscleRow extends StatelessWidget {
               textAlign: TextAlign.right,
               style: TextStyle(
                 fontSize: 12,
-                color: Colors.grey.shade700,
+                color: scheme.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
               ),
             ),

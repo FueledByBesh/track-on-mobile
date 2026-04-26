@@ -1,3 +1,4 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:geolocator/geolocator.dart';
 
 import 'health_service.dart';
@@ -9,6 +10,7 @@ import 'logger_service.dart';
 enum AppPermission {
   location,
   fitness,
+  notifications,
 }
 
 /// Unified status across all permission types. The underlying platform
@@ -54,6 +56,8 @@ class PermissionService {
           return _mapGeolocatorStatus(await Geolocator.checkPermission());
         case AppPermission.fitness:
           return _checkFitness();
+        case AppPermission.notifications:
+          return _checkNotifications();
       }
     } catch (e) {
       Logger.w('PERM', 'check($permission) failed: $e');
@@ -70,6 +74,8 @@ class PermissionService {
           return _requestLocation();
         case AppPermission.fitness:
           return _requestFitness();
+        case AppPermission.notifications:
+          return _requestNotifications();
       }
     } catch (e) {
       Logger.e('PERM', 'request($permission) failed', e);
@@ -137,5 +143,48 @@ class PermissionService {
     }
     final granted = await HealthService.requestPermission();
     return granted ? AppPermissionStatus.granted : AppPermissionStatus.denied;
+  }
+
+  // ============ NOTIFICATIONS (FCM) ============
+
+  /// FirebaseMessaging's AuthorizationStatus has four states:
+  /// `authorized`, `denied`, `provisional`, `notDetermined`. We map
+  /// those onto our normalized enum. The only nuance: when the user
+  /// has already declined once the API returns `denied` with no
+  /// distinction from "can re-prompt" vs "needs settings". We treat
+  /// any post-check `denied` as permanentlyDenied so the UI shows
+  /// "Open Settings" instead of another Allow button that would
+  /// silently no-op on Android 13+ after the second decline.
+  Future<AppPermissionStatus> _checkNotifications() async {
+    final settings =
+        await FirebaseMessaging.instance.getNotificationSettings();
+    switch (settings.authorizationStatus) {
+      case AuthorizationStatus.authorized:
+      case AuthorizationStatus.provisional:
+        return AppPermissionStatus.granted;
+      case AuthorizationStatus.denied:
+        return AppPermissionStatus.permanentlyDenied;
+      case AuthorizationStatus.notDetermined:
+        return AppPermissionStatus.denied;
+    }
+  }
+
+  Future<AppPermissionStatus> _requestNotifications() async {
+    final settings = await FirebaseMessaging.instance.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    switch (settings.authorizationStatus) {
+      case AuthorizationStatus.authorized:
+      case AuthorizationStatus.provisional:
+        return AppPermissionStatus.granted;
+      case AuthorizationStatus.denied:
+        // OS didn't reprompt (user already denied) or user denied now.
+        // Either way next action is "Open Settings."
+        return AppPermissionStatus.permanentlyDenied;
+      case AuthorizationStatus.notDetermined:
+        return AppPermissionStatus.denied;
+    }
   }
 }

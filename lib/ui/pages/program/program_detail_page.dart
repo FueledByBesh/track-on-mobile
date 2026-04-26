@@ -109,8 +109,9 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
   @override
   Widget build(BuildContext context) {
     final program = widget.program;
+    final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFBFC),
       appBar: AppBar(
         title: _editing
             ? const Text('Edit Program')
@@ -147,7 +148,10 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
                 program.description!.isNotEmpty) ...[
               Text(
                 program.description!,
-                style: TextStyle(color: Colors.grey.shade600, height: 1.4),
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
               ),
               const SizedBox(height: 16),
             ],
@@ -178,14 +182,16 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
                       horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
                     color: isOn
-                        ? const Color(0xFF6B5FFF)
-                        : Colors.grey.shade100,
+                        ? scheme.primary
+                        : scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     _weekdayLabels[i],
                     style: TextStyle(
-                      color: isOn ? Colors.white : Colors.grey.shade700,
+                      color: isOn
+                          ? Colors.white
+                          : scheme.onSurfaceVariant,
                       fontWeight: FontWeight.w600,
                       fontSize: 12,
                     ),
@@ -204,7 +210,7 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
               const Spacer(),
               Switch(
                 value: _editing ? _active : program.active,
-                activeColor: const Color(0xFF6B5FFF),
+                activeThumbColor: scheme.primary,
                 onChanged: _editing
                     ? (v) => setState(() => _active = v)
                     : null,
@@ -253,9 +259,10 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  border:
-                      Border(top: BorderSide(color: Colors.grey.shade200)),
+                  color: scheme.surface,
+                  border: Border(
+                    top: BorderSide(color: scheme.outlineVariant),
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -274,8 +281,8 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
                         icon: const Icon(Icons.event),
                         label: const Text('Add to Today'),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF6B5FFF),
-                          side: const BorderSide(color: Color(0xFF6B5FFF)),
+                          foregroundColor: scheme.primary,
+                          side: BorderSide(color: scheme.primary),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -313,7 +320,7 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
                         icon: const Icon(Icons.play_arrow),
                         label: const Text('Start Training'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF6B5FFF),
+                          backgroundColor: scheme.primary,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
@@ -331,67 +338,77 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
 
   Widget _readOnlyItemCard(
       BuildContext context, ProgramWorkoutItem item, int index) {
-    return GestureDetector(
-      onTap: () {
-        final fitness = context.read<FitnessProvider>();
-        Workout? workout;
-        try {
-          workout =
-              fitness.allWorkouts.firstWhere((w) => w.id == item.workoutId);
-        } catch (_) {}
-        if (workout != null) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => AboutWorkoutPage(
-                workout: workout!,
-                pageContext: AboutWorkoutContext(
-                  removeFromProgramId: widget.program.id,
-                  onRemoveFromProgram: () {
-                    fitness.removeWorkoutFromProgram(
-                        widget.program.id, item.workoutId);
-                    Navigator.pop(context);
-                  },
-                ),
-              ),
-            ),
-          );
-        }
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: const Color(0xFF6B5FFF).withAlpha(30),
-              child: Text('${index + 1}',
-                  style: const TextStyle(
-                      color: Color(0xFF6B5FFF),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12)),
+          onTap: () {
+            final fitness = context.read<FitnessProvider>();
+            Workout? workout;
+            try {
+              workout = fitness.allWorkouts
+                  .firstWhere((w) => w.id == item.workoutId);
+            } catch (_) {}
+            if (workout != null) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AboutWorkoutPage(
+                    workout: workout!,
+                    pageContext: AboutWorkoutContext(
+                      removeFromProgramId: widget.program.id,
+                      onRemoveFromProgram: () {
+                        fitness.removeWorkoutFromProgram(
+                            widget.program.id, item.workoutId);
+                        Navigator.pop(context);
+                      },
+                    ),
+                  ),
+                ),
+              );
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: scheme.outlineVariant),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(item.workoutName,
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  Text('${item.sets} sets × ${item.reps} reps',
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                ],
-              ),
+            child: Row(
+              children: [
+                _IndexBubble(index: index),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.workoutName,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                      Text(
+                        '${item.sets} sets × ${item.reps} reps',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right,
+                    color: scheme.onSurfaceVariant, size: 20),
+              ],
             ),
-            const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
-          ],
+          ),
         ),
       ),
     );
@@ -399,35 +416,34 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
 
   Widget _editableItemCard(
       BuildContext context, ProgramWorkoutItem item, int index) {
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
     return Container(
       key: ValueKey(item.workoutId),
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Row(
         children: [
-          const Icon(Icons.drag_handle, color: Colors.grey, size: 20),
+          Icon(Icons.drag_handle, color: scheme.onSurfaceVariant, size: 20),
           const SizedBox(width: 8),
-          CircleAvatar(
-            radius: 16,
-            backgroundColor: const Color(0xFF6B5FFF).withAlpha(30),
-            child: Text('${index + 1}',
-                style: const TextStyle(
-                    color: Color(0xFF6B5FFF),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12)),
-          ),
+          _IndexBubble(index: index),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(item.workoutName,
-                style: const TextStyle(fontWeight: FontWeight.w600)),
+            child: Text(
+              item.workoutName,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurface,
+              ),
+            ),
           ),
           IconButton(
-            icon: Icon(Icons.close, color: Colors.red.shade400, size: 20),
+            icon: Icon(Icons.close, color: scheme.error, size: 20),
             onPressed: () => _removeItem(index),
             visualDensity: VisualDensity.compact,
           ),
@@ -449,13 +465,39 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
   }
 
   Widget _sectionLabel(String text) {
+    final scheme = Theme.of(context).colorScheme;
     return Text(
       text,
       style: TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.w700,
-        color: Colors.grey.shade500,
+        color: scheme.onSurfaceVariant,
         letterSpacing: 0.5,
+      ),
+    );
+  }
+}
+
+/// Numbered circle used on both the read-only and editable item
+/// cards. Pulled out so both paths share the same styling + the
+/// primary-tinted background follows the current theme.
+class _IndexBubble extends StatelessWidget {
+  final int index;
+  const _IndexBubble({required this.index});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return CircleAvatar(
+      radius: 16,
+      backgroundColor: scheme.primary.withAlpha(30),
+      child: Text(
+        '${index + 1}',
+        style: TextStyle(
+          color: scheme.primary,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
       ),
     );
   }
@@ -493,6 +535,7 @@ class _UpcomingSectionState extends State<_UpcomingSection> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     if (_loading) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 16),
@@ -510,22 +553,33 @@ class _UpcomingSectionState extends State<_UpcomingSection> {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Text(
           'No upcoming dates scheduled.',
-          style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+          style: TextStyle(
+            color: scheme.onSurfaceVariant,
+            fontSize: 13,
+          ),
         ),
       );
     }
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
     return Column(
       children: _upcoming!.map((row) {
         final dateStr = row['planned_date'] as String? ?? '';
         final completed = row['completed'] as bool? ?? false;
+        // "Completed" is a success signal — semantic green is
+        // recognizable across themes. We tint with scheme.primary
+        // alpha overlay for the "upcoming" (non-completed) case so
+        // the row still feels like it belongs to the app.
+        final accent = completed ? Colors.green : scheme.primary;
         return Container(
           margin: const EdgeInsets.only(bottom: 6),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: completed ? Colors.green.shade50 : Colors.white,
+            color: completed ? accent.withAlpha(22) : cardColor,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: completed ? Colors.green.shade200 : Colors.grey.shade200,
+              color: completed
+                  ? accent.withAlpha(80)
+                  : scheme.outlineVariant,
             ),
           ),
           child: Row(
@@ -533,7 +587,7 @@ class _UpcomingSectionState extends State<_UpcomingSection> {
               Icon(
                 completed ? Icons.check_circle : Icons.event,
                 size: 18,
-                color: completed ? Colors.green : const Color(0xFF6B5FFF),
+                color: accent,
               ),
               const SizedBox(width: 10),
               Text(
@@ -541,7 +595,7 @@ class _UpcomingSectionState extends State<_UpcomingSection> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: completed ? Colors.green.shade700 : Colors.grey.shade800,
+                  color: completed ? accent : scheme.onSurface,
                   decoration: completed ? TextDecoration.lineThrough : null,
                 ),
               ),
@@ -551,7 +605,7 @@ class _UpcomingSectionState extends State<_UpcomingSection> {
                   'Done',
                   style: TextStyle(
                     fontSize: 11,
-                    color: Colors.green.shade600,
+                    color: accent,
                     fontWeight: FontWeight.w600,
                   ),
                 ),

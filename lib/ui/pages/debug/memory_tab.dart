@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:trackon_mobile/data/local/activity_database.dart';
 import 'package:trackon_mobile/data/local/cache_database.dart';
 import 'package:trackon_mobile/data/local/logger_database.dart';
+import 'package:trackon_mobile/data/local/notification_cache_database.dart';
 import 'package:trackon_mobile/data/local/step_database.dart';
 import 'package:trackon_mobile/data/local/workout_library_database.dart';
 
@@ -121,6 +122,11 @@ final List<_DbMeta> _dbs = [
     key: 'cache',
     label: 'Cache',
     open: () => CacheDatabase.database,
+  ),
+  _DbMeta(
+    key: 'notifications',
+    label: 'Notifications',
+    open: () => NotificationCacheDatabase.database,
   ),
 ];
 

@@ -6,6 +6,8 @@ import 'package:trackon_mobile/data/providers/auth_provider.dart';
 import 'package:trackon_mobile/data/providers/connectivity_provider.dart';
 import 'package:trackon_mobile/data/providers/activity_provider.dart';
 import 'package:trackon_mobile/data/providers/theme_provider.dart';
+import 'package:trackon_mobile/data/services/push_messaging_service.dart';
+import 'package:trackon_mobile/ui/deep_link_router.dart';
 import 'package:trackon_mobile/ui/pages/auth/login_page.dart';
 import 'package:trackon_mobile/ui/pages/homepage/core.dart';
 import 'package:trackon_mobile/ui/pages/fitnesspage/core.dart';
@@ -16,6 +18,11 @@ import 'package:trackon_mobile/ui/pages/runpage/core.dart';
 /// login page) can still push SnackBars.
 final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
+
+/// Exposed so non-UI code (push-message handlers, deep-link router)
+/// can push routes without a BuildContext. Used by DeepLinkRouter.
+final GlobalKey<NavigatorState> rootNavigatorKey =
+    GlobalKey<NavigatorState>();
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -41,6 +48,7 @@ class MyApp extends StatelessWidget {
       title: 'TrackOn',
       debugShowCheckedModeBanner: false,
       scaffoldMessengerKey: rootScaffoldMessengerKey,
+      navigatorKey: rootNavigatorKey,
       theme: themeProvider.lightTheme,
       darkTheme: themeProvider.darkTheme,
       themeMode: themeProvider.mode,
@@ -113,6 +121,47 @@ class _MainNavigationState extends State<MainNavigation> {
     const FitnessPage(),
     const GroupsPage(),
   ];
+
+  VoidCallback? _tapDeepLinkListener;
+
+  /// Cached so dispose() can reach the notifier without an ancestor
+  /// lookup on an already-deactivated context.
+  PushMessagingService? _pushService;
+
+  @override
+  void initState() {
+    super.initState();
+    // Only wired while the user is signed in (MainNavigation only
+    // mounts inside AuthWrapper when isLoggedIn is true), so every
+    // push arriving here is for the current user.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pushService = context.read<PushMessagingService>();
+      _tapDeepLinkListener = () {
+        final link = _pushService!.onTapDeepLink.value;
+        if (link == null) return;
+        final navigator = rootNavigatorKey.currentState;
+        if (navigator == null) return;
+        DeepLinkRouter.handle(link, navigator);
+        // Consume the link so re-triggers don't re-navigate.
+        _pushService!.onTapDeepLink.value = null;
+      };
+      _pushService!.onTapDeepLink.addListener(_tapDeepLinkListener!);
+      // If the app was cold-started by tapping a push, the
+      // ValueNotifier already has the link from bindHandlers; fire
+      // once on mount.
+      if (_pushService!.onTapDeepLink.value != null) {
+        _tapDeepLinkListener!();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    if (_tapDeepLinkListener != null && _pushService != null) {
+      _pushService!.onTapDeepLink.removeListener(_tapDeepLinkListener!);
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
