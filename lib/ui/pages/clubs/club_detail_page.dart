@@ -36,7 +36,7 @@ class _ClubDetailPageState extends State<ClubDetailPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     _load();
   }
 
@@ -195,7 +195,6 @@ class _ClubDetailPageState extends State<ClubDetailPage>
                 indicatorColor: scheme.primary,
                 tabs: const [
                   Tab(text: 'Posts'),
-                  Tab(text: 'Challenges'),
                   Tab(text: 'Members'),
                 ],
               ),
@@ -207,7 +206,6 @@ class _ClubDetailPageState extends State<ClubDetailPage>
           controller: _tabController,
           children: [
             _ClubPostsTab(club: club),
-            _ClubChallengesTab(club: club),
             _ClubMembersTab(club: club),
           ],
         ),
@@ -1235,254 +1233,6 @@ String _localDateTime(String iso) {
   }
 }
 
-// ============ CHALLENGES TAB ============
-
-class _ClubChallengesTab extends StatefulWidget {
-  final Club club;
-  const _ClubChallengesTab({required this.club});
-
-  @override
-  State<_ClubChallengesTab> createState() => _ClubChallengesTabState();
-}
-
-class _ClubChallengesTabState extends State<_ClubChallengesTab> {
-  late Future<List<Challenge>> _future;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = _load();
-  }
-
-  Future<List<Challenge>> _load() {
-    if (!widget.club.canViewChallenges) return Future.value(const []);
-    return context
-        .read<ClubApiService>()
-        .getActiveChallenges(widget.club.id);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final club = widget.club;
-    if (!club.canViewChallenges) {
-      return const _LockedSection(
-        icon: Icons.emoji_events_outlined,
-        label: 'Challenges are private',
-        detail: 'Join this club to see and compete in its challenges.',
-      );
-    }
-    final scheme = Theme.of(context).colorScheme;
-
-    return FutureBuilder<List<Challenge>>(
-      future: _future,
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snap.hasError) {
-          return Center(
-              child: Text('Could not load challenges',
-                  style: TextStyle(color: scheme.onSurfaceVariant)));
-        }
-        final challenges = snap.data ?? const [];
-        if (challenges.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.emoji_events_outlined,
-                    size: 48, color: scheme.onSurfaceVariant),
-                const SizedBox(height: 12),
-                Text('No challenges yet',
-                    style: TextStyle(color: scheme.onSurfaceVariant)),
-              ],
-            ),
-          );
-        }
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: challenges.length,
-          itemBuilder: (context, i) =>
-              _ChallengeCard(challenge: challenges[i]),
-        );
-      },
-    );
-  }
-}
-
-class _ChallengeCard extends StatelessWidget {
-  final Challenge challenge;
-  const _ChallengeCard({required this.challenge});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
-    final progress = challenge.userProgress != null
-        ? (challenge.userProgress! / challenge.targetValue).clamp(0.0, 1.0)
-        : 0.0;
-    final isComplete = progress >= 1.0;
-    final unit = challenge.targetType == 'STEPS' ? 'steps' : 'km';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: challenge.isSubscribed
-              ? scheme.primary.withAlpha(80)
-              : scheme.outlineVariant,
-          width: challenge.isSubscribed ? 1.5 : 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: scheme.primary.withAlpha(30),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  challenge.targetType,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: scheme.primary,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              Text(
-                _dateRange(challenge.startDate, challenge.endDate),
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            challenge.title,
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          if (challenge.description != null) ...[
-            const SizedBox(height: 4),
-            Text(challenge.description!,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: scheme.onSurfaceVariant)),
-          ],
-          const SizedBox(height: 12),
-          if (challenge.isSubscribed) ...[
-            Row(
-              children: [
-                Text(
-                  '${_formatValue(challenge.userProgress ?? 0)} / ${_formatValue(challenge.targetValue)} $unit',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onSurface),
-                ),
-                const Spacer(),
-                Text(
-                  '${(progress * 100).round()}%',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: isComplete ? Colors.green : scheme.primary,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 8,
-                backgroundColor: scheme.surfaceContainerHighest,
-                valueColor: AlwaysStoppedAnimation(
-                    isComplete ? Colors.green : scheme.primary),
-              ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Icon(Icons.people_outline,
-                  size: 16, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 4),
-              Text('${challenge.subscriberCount} joined',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: scheme.onSurfaceVariant)),
-              const Spacer(),
-              if (challenge.isSubscribed)
-                OutlinedButton(
-                  onPressed: () {
-                    context
-                        .read<ClubApiService>()
-                        .unsubscribeChallenge(challenge.id);
-                  },
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: scheme.onSurfaceVariant,
-                    side: BorderSide(color: scheme.outlineVariant),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                  child: const Text('Leave'),
-                )
-              else
-                ElevatedButton(
-                  onPressed: () {
-                    context
-                        .read<ClubApiService>()
-                        .subscribeChallenge(challenge.id);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: scheme.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                  child: const Text('Join'),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _dateRange(String start, String end) {
-    try {
-      final s = DateFormat('MMM d').format(DateTime.parse(start));
-      final e = DateFormat('MMM d').format(DateTime.parse(end));
-      return '$s – $e';
-    } catch (_) {
-      return '';
-    }
-  }
-
-  String _formatValue(double v) {
-    if (v >= 1000) return NumberFormat('#,###').format(v);
-    return v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 1);
-  }
-}
-
 // ============ MEMBERS TAB ============
 
 class _ClubMembersTab extends StatefulWidget {
@@ -1556,14 +1306,33 @@ class _ClubMembersTabState extends State<_ClubMembersTab> {
                 ),
                 child: Row(
                   children: [
-                    CircleAvatar(
-                      backgroundColor: scheme.primary.withAlpha(30),
-                      child: Text(
-                        m.name.isNotEmpty ? m.name[0] : '?',
-                        style: TextStyle(
-                            color: scheme.primary,
-                            fontWeight: FontWeight.w600),
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: scheme.primary.withAlpha(40),
+                        image: m.avatarImageUrl != null &&
+                                m.avatarImageUrl!.isNotEmpty
+                            ? DecorationImage(
+                                image: NetworkImage(m.avatarImageUrl!),
+                                fit: BoxFit.cover,
+                              )
+                            : null,
                       ),
+                      child: m.avatarImageUrl == null ||
+                              m.avatarImageUrl!.isEmpty
+                          ? Center(
+                              child: Text(
+                                m.name.isNotEmpty
+                                    ? m.name[0].toUpperCase()
+                                    : '?',
+                                style: TextStyle(
+                                    color: scheme.primary,
+                                    fontWeight: FontWeight.w700),
+                              ),
+                            )
+                          : null,
                     ),
                     const SizedBox(width: 12),
                     Expanded(

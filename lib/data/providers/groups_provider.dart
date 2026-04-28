@@ -106,6 +106,22 @@ class GroupsProvider extends ChangeNotifier {
     return post;
   }
 
+  /// Delete a post. Routes to the right service based on `kind`. The
+  /// caller is also responsible for popping any open detail page on
+  /// success.
+  Future<void> deletePost(PostKind kind, String postId) async {
+    if (kind == PostKind.club) {
+      await _clubPosts.delete(postId);
+    } else {
+      await _userPosts.delete(postId);
+    }
+    // Drop the deleted row from the feed locally so the UI updates
+    // before the next loadFeed() round-trip.
+    _feed = _feed.where((p) => p.id != postId).toList();
+    notifyListeners();
+    await loadFeed();
+  }
+
   /// Toggle the viewer's reaction. Swaps the updated post into `_feed`
   /// in place so the card re-renders without a full feed refetch.
   Future<void> likePost(PostKind kind, String postId, bool isLike) async {

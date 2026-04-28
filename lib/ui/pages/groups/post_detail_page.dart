@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../data/models/post.dart' as post_model;
 import '../../../data/providers/groups_provider.dart';
 import '../../../data/services/post_service.dart';
+import '../../../data/services/user_service.dart';
 import '../../sharedwidgets/profile_page.dart';
 import '../../sharedwidgets/post_attachments_viewer.dart';
 import '../runpage/run_detail_page.dart';
@@ -23,6 +24,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
   List<post_model.Comment> _comments = [];
   bool _loadingComments = true;
   bool _submitting = false;
+  bool _deleting = false;
+  String? _currentUserId;
   final _commentCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
 
@@ -31,6 +34,19 @@ class _PostDetailPageState extends State<PostDetailPage> {
     super.initState();
     _post = widget.post;
     _loadComments();
+    _loadCurrentUser();
+  }
+
+  /// Used to decide whether to show the Delete menu. Failure is fine —
+  /// we just don't show the option and the user can still use the
+  /// rest of the page.
+  Future<void> _loadCurrentUser() async {
+    try {
+      final me = await context.read<UserApiService>().getMe();
+      if (mounted) setState(() => _currentUserId = me.id);
+    } catch (_) {
+      // Silent. Worst case: the author can't see the delete button.
+    }
   }
 
   @override
@@ -95,6 +111,47 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
   }
 
+  Future<void> _confirmDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete post?'),
+        content: const Text(
+          'This permanently removes the post and its comments, '
+          'likes, and image attachments.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    setState(() => _deleting = true);
+    final provider = context.read<GroupsProvider>();
+    try {
+      await provider.deletePost(_post.kind, _post.id);
+      if (!mounted) return;
+      // Pop with `true` so the caller can refresh its list.
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _deleting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete: $e')),
+      );
+    }
+  }
+
   Future<void> _toggleLike(bool isLike) async {
     try {
       await context
@@ -128,7 +185,43 @@ class _PostDetailPageState extends State<PostDetailPage> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(elevation: 0),
+      appBar: AppBar(
+        elevation: 0,
+        actions: [
+          if (_currentUserId != null && _currentUserId == _post.authorId)
+            _deleting
+                ? const Padding(
+                    padding: EdgeInsets.only(right: 14),
+                    child: Center(
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child:
+                            CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  )
+                : PopupMenuButton<String>(
+                    onSelected: (v) {
+                      if (v == 'delete') _confirmDelete();
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem<String>(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_outline,
+                                color: Colors.red, size: 18),
+                            SizedBox(width: 10),
+                            Text('Delete',
+                                style: TextStyle(color: Colors.red)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+        ],
+      ),
       body: Column(
         children: [
           Expanded(

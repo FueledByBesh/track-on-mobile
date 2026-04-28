@@ -21,4 +21,8 @@ class UserPostApiService {
     final res = await _api.dio.get('/api/posts/user/$authorId');
     return (res.data as List).map((e) => Post.fromJson(e)).toList();
   }
+
+  Future<void> delete(String postId) async {
+    await _api.dio.delete('/api/posts/user/$postId');
+  }
 }

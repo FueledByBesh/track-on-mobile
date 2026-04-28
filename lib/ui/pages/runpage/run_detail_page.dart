@@ -46,6 +46,11 @@ class _RunDetailPageState extends State<RunDetailPage> {
   List<_Split> _splits = const [];
   bool _hasAltitude = false;
   List<FlSpot> _elevationSpots = const [];
+  bool _hasSpeed = false;
+  List<FlSpot> _speedSpots = const [];
+  /// Cumulative km positions where the user paused. Used to draw
+  /// vertical markers on the elevation + speed charts.
+  List<double> _pauseKms = const [];
 
   @override
   void initState() {
@@ -71,6 +76,11 @@ class _RunDetailPageState extends State<RunDetailPage> {
         _elevationSpots = _hasAltitude
             ? _ElevationChart._buildElevationSpots(act.route)
             : const [];
+        _hasSpeed = act.route.any((p) => p.speed != null && p.speed! > 0);
+        _speedSpots = _hasSpeed
+            ? _SpeedChart._buildSpeedSpots(act.route)
+            : const [];
+        _pauseKms = _Body._pauseKmsFrom(act.route);
         _loading = false;
       });
     } catch (_) {
@@ -97,6 +107,9 @@ class _RunDetailPageState extends State<RunDetailPage> {
               splits: _splits,
               hasAltitude: _hasAltitude,
               elevationSpots: _elevationSpots,
+              hasSpeed: _hasSpeed,
+              speedSpots: _speedSpots,
+              pauseKms: _pauseKms,
               onRecenter: _mapController.fitToRoute,
             ),
         ],
@@ -299,6 +312,9 @@ class _DetailSheet extends StatelessWidget {
   final List<_Split> splits;
   final bool hasAltitude;
   final List<FlSpot> elevationSpots;
+  final bool hasSpeed;
+  final List<FlSpot> speedSpots;
+  final List<double> pauseKms;
   final VoidCallback onRecenter;
 
   const _DetailSheet({
@@ -306,6 +322,9 @@ class _DetailSheet extends StatelessWidget {
     required this.splits,
     required this.hasAltitude,
     required this.elevationSpots,
+    required this.hasSpeed,
+    required this.speedSpots,
+    required this.pauseKms,
     required this.onRecenter,
   });
 
@@ -346,10 +365,19 @@ class _DetailSheet extends StatelessWidget {
               ),
               const SizedBox(height: 12),
             ],
+            if (hasSpeed) ...[
+              _Section(
+                title: 'Speed',
+                child:
+                    _SpeedChart(spots: speedSpots, pauseKms: pauseKms),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (hasAltitude) ...[
               _Section(
                 title: 'Elevation',
-                child: _ElevationChart(spots: elevationSpots),
+                child: _ElevationChart(
+                    spots: elevationSpots, pauseKms: pauseKms),
               ),
               const SizedBox(height: 12),
             ],
@@ -429,6 +457,34 @@ class _Body {
       lon += p.lon;
     }
     return MapPoint(lat / route.length, lon / route.length);
+  }
+
+  /// Walk the route and record the cumulative km position at every
+  /// pause boundary (where segmentIndex transitions). Used to draw
+  /// vertical markers on the elevation + speed charts so users see
+  /// where they stopped during the run.
+  static List<double> _pauseKmsFrom(List<RoutePoint> route) {
+    if (route.length < 2) return const [];
+    final List<double> out = [];
+    double cumKm = 0;
+    int segIndex = route.first.segmentIndex;
+    for (int i = 1; i < route.length; i++) {
+      final prev = route[i - 1];
+      final curr = route[i];
+      if (curr.segmentIndex != prev.segmentIndex) {
+        // segmentIndex change marks the pause; record the position
+        // (cumulative distance is unchanged across the pause).
+        out.add(cumKm);
+        segIndex = curr.segmentIndex;
+        continue;
+      }
+      cumKm += Geolocator.distanceBetween(
+            prev.lat, prev.lon, curr.lat, curr.lon,
+          ) / 1000;
+    }
+    // Suppress unused-but-needed segIndex warning if compiler nags.
+    assert(segIndex >= 0);
+    return out;
   }
 
   /// Walks the route and records per-km splits: at every km boundary,
@@ -739,8 +795,9 @@ class _ElevationChart extends StatelessWidget {
   /// the chart itself does no route walking, so its build is cheap
   /// enough to run on every sheet-drag frame.
   final List<FlSpot> spots;
+  final List<double> pauseKms;
 
-  const _ElevationChart({required this.spots});
+  const _ElevationChart({required this.spots, this.pauseKms = const []});
 
   @override
   Widget build(BuildContext context) {
@@ -763,6 +820,9 @@ class _ElevationChart extends StatelessWidget {
     final minY = altitudes.reduce((a, b) => a < b ? a : b);
     final maxY = altitudes.reduce((a, b) => a > b ? a : b);
     final padding = ((maxY - minY) * 0.15).clamp(2.0, double.infinity);
+    final xRange = (spots.last.x - spots.first.x).abs();
+    final xInterval =
+        (xRange / 4).ceilToDouble().clamp(1.0, double.infinity);
 
     return SizedBox(
       height: 160,
@@ -805,6 +865,7 @@ class _ElevationChart extends StatelessWidget {
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 22,
+                interval: xInterval,
                 getTitlesWidget: (value, _) => Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
@@ -831,6 +892,17 @@ class _ElevationChart extends StatelessWidget {
               ),
             ),
           ),
+          extraLinesData: ExtraLinesData(
+            verticalLines: [
+              for (final km in pauseKms)
+                VerticalLine(
+                  x: km,
+                  color: scheme.onSurfaceVariant.withAlpha(120),
+                  strokeWidth: 1.2,
+                  dashArray: const [4, 4],
+                ),
+            ],
+          ),
           borderData: FlBorderData(show: false),
         ),
       ),
@@ -839,6 +911,19 @@ class _ElevationChart extends StatelessWidget {
 
   static List<FlSpot> _buildElevationSpots(List<RoutePoint> route) {
     if (route.length < 2) return const [];
+
+    // Anchor: the first point with a non-null altitude is treated as
+    // 0m. The chart then shows climb/descent relative to the start —
+    // 700m absolute readings stop dominating the Y axis on flat runs.
+    double? baseline;
+    for (final p in route) {
+      if (p.altitude != null) {
+        baseline = p.altitude;
+        break;
+      }
+    }
+    if (baseline == null) return const [];
+
     final List<FlSpot> raw = [];
     double cumKm = 0;
     for (int i = 0; i < route.length; i++) {
@@ -857,10 +942,168 @@ class _ElevationChart extends StatelessWidget {
         }
       }
       final alt = route[i].altitude;
-      if (alt != null) raw.add(FlSpot(cumKm, alt));
+      if (alt != null) raw.add(FlSpot(cumKm, alt - baseline));
     }
     if (raw.length <= 80) return raw;
     // Downsample by picking every Nth sample.
+    final step = (raw.length / 80).ceil();
+    return [for (int i = 0; i < raw.length; i += step) raw[i]];
+  }
+}
+
+// ============ SPEED CHART ============
+
+/// Speed (km/h) over distance. Mirrors [_ElevationChart] in shape:
+/// raw `RoutePoint.speed` values (m/s, GPS-reported) are converted to
+/// km/h, plotted against cumulative distance, then downsampled to keep
+/// long routes from blowing up the chart.
+class _SpeedChart extends StatelessWidget {
+  final List<FlSpot> spots;
+  final List<double> pauseKms;
+
+  const _SpeedChart({required this.spots, this.pauseKms = const []});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    if (spots.length < 2) {
+      return SizedBox(
+        height: 120,
+        child: Center(
+          child: Text(
+            'No speed data',
+            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+          ),
+        ),
+      );
+    }
+
+    final speeds = spots.map((s) => s.y).toList();
+    final minY = speeds.reduce((a, b) => a < b ? a : b);
+    final maxY = speeds.reduce((a, b) => a > b ? a : b);
+    final padding = ((maxY - minY) * 0.15).clamp(1.0, double.infinity);
+
+    // Cap to ~5 ticks across the X axis so labels don't collide on
+    // long routes. ceil so distance-units feel "round".
+    final xRange = (spots.last.x - spots.first.x).abs();
+    final xInterval =
+        (xRange / 4).ceilToDouble().clamp(1.0, double.infinity);
+
+    return SizedBox(
+      height: 160,
+      child: LineChart(
+        LineChartData(
+          minX: spots.first.x,
+          maxX: spots.last.x,
+          minY: (minY - padding).clamp(0, double.infinity).toDouble(),
+          maxY: maxY + padding,
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              curveSmoothness: 0.3,
+              color: scheme.secondary,
+              barWidth: 2,
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(
+                show: true,
+                color: scheme.secondary.withAlpha(40),
+              ),
+            ),
+          ],
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (_) => FlLine(
+              color: scheme.outlineVariant.withAlpha(80),
+              strokeWidth: 1,
+            ),
+          ),
+          titlesData: FlTitlesData(
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 22,
+                interval: xInterval,
+                getTitlesWidget: (value, _) => Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '${value.toStringAsFixed(1)}km',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 44,
+                getTitlesWidget: (value, _) => Text(
+                  '${value.toStringAsFixed(0)} km/h',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          extraLinesData: ExtraLinesData(
+            verticalLines: [
+              for (final km in pauseKms)
+                VerticalLine(
+                  x: km,
+                  color: scheme.onSurfaceVariant.withAlpha(120),
+                  strokeWidth: 1.2,
+                  dashArray: const [4, 4],
+                ),
+            ],
+          ),
+          borderData: FlBorderData(show: false),
+        ),
+      ),
+    );
+  }
+
+  /// Walk the route, accumulate distance, and emit (km, speed_kmh)
+  /// for every point that has a positive speed reading. Pause gaps
+  /// (segmentIndex change) don't add to distance. Downsamples to ~80
+  /// points so long routes stay snappy.
+  static List<FlSpot> _buildSpeedSpots(List<RoutePoint> route) {
+    if (route.length < 2) return const [];
+    final List<FlSpot> raw = [];
+    double cumKm = 0;
+    for (int i = 0; i < route.length; i++) {
+      if (i > 0) {
+        final prev = route[i - 1];
+        final curr = route[i];
+        if (curr.segmentIndex == prev.segmentIndex) {
+          cumKm += Geolocator.distanceBetween(
+                prev.lat,
+                prev.lon,
+                curr.lat,
+                curr.lon,
+              ) /
+              1000;
+        }
+      }
+      final s = route[i].speed;
+      if (s != null && s >= 0) {
+        // m/s → km/h
+        raw.add(FlSpot(cumKm, s * 3.6));
+      }
+    }
+    if (raw.length <= 80) return raw;
     final step = (raw.length / 80).ceil();
     return [for (int i = 0; i < raw.length; i += step) raw[i]];
   }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:trackon_mobile/data/models/club.dart';
 import 'package:trackon_mobile/data/models/post.dart' as post_model;
 import 'package:trackon_mobile/data/models/user.dart';
 import 'package:trackon_mobile/data/models/user_activity_stats.dart';
@@ -12,6 +13,7 @@ import 'package:trackon_mobile/data/services/follow_service.dart';
 import 'package:trackon_mobile/data/services/user_post_service.dart';
 import 'package:trackon_mobile/data/services/user_service.dart';
 
+import '../pages/clubs/club_detail_page.dart';
 import '../pages/groups/create_post_page.dart';
 import '../pages/groups/post_detail_page.dart';
 import 'followers_list_page.dart';
@@ -599,7 +601,7 @@ class _ActivityTab extends StatefulWidget {
 }
 
 class _ActivityTabState extends State<_ActivityTab> {
-  static const int _windowDays = 30;
+  _WindowPreset _preset = _WindowPreset.last30;
 
   UserActivityStats? _data;
   bool _loading = true;
@@ -622,11 +624,12 @@ class _ActivityTabState extends State<_ActivityTab> {
     });
     try {
       final api = context.read<UserApiService>();
+      final days = _preset.days;
       final data = widget.profile.isSelf
-          ? await api.getMyActivityStats(days: _windowDays)
+          ? await api.getMyActivityStats(days: days)
           : await api.getActivityStatsById(
               widget.profile.id,
-              days: _windowDays,
+              days: days,
             );
       if (!mounted) return;
       setState(() {
@@ -640,6 +643,12 @@ class _ActivityTabState extends State<_ActivityTab> {
         _error = 'Could not load activity stats';
       });
     }
+  }
+
+  void _changePreset(_WindowPreset p) {
+    if (p == _preset) return;
+    setState(() => _preset = p);
+    _load();
   }
 
   @override
@@ -671,35 +680,55 @@ class _ActivityTabState extends State<_ActivityTab> {
     final d = _data;
     if (d == null || d.isEmpty) {
       final scheme = Theme.of(context).colorScheme;
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.directions_run,
-                  size: 48, color: scheme.onSurfaceVariant),
-              const SizedBox(height: 12),
-              Text(
-                widget.profile.isSelf
-                    ? 'No activity in the last $_windowDays days.'
-                    : 'No recent activity.',
-                style: TextStyle(color: scheme.onSurfaceVariant),
-                textAlign: TextAlign.center,
-              ),
-            ],
+      // Keep the chooser visible so the user can widen the window
+      // to find activity outside the empty preset.
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: [
+          _WindowChooser(selected: _preset, onChanged: _changePreset),
+          const SizedBox(height: 40),
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.directions_run,
+                    size: 48, color: scheme.onSurfaceVariant),
+                const SizedBox(height: 12),
+                Text(
+                  widget.profile.isSelf
+                      ? 'No activity in this period.'
+                      : 'No recent activity.',
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       );
     }
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        _WindowLabel(days: d.windowDays),
-        const SizedBox(height: 10),
+        _WindowChooser(selected: _preset, onChanged: _changePreset),
+        const SizedBox(height: 14),
         _HeadlineStrip(totals: d.totals),
         const SizedBox(height: 16),
+        if (d.records.any((r) => !r.isEmpty)) ...[
+          _Section(
+            title: 'Personal records',
+            subtitle: 'Best · ${_preset.label}',
+            child: _PersonalRecordsStrip(records: d.records),
+          ),
+          const SizedBox(height: 12),
+        ],
+        _Section(
+          title: 'Last 12 weeks',
+          subtitle: 'Daily activity heatmap',
+          child: _ActivityHeatmapCalendar(days: d.heatmap),
+        ),
+        const SizedBox(height: 12),
         _Section(
           title: 'Weekly distance',
           child: _WeeklyBarChart(weekly: d.weekly),
@@ -717,20 +746,105 @@ class _ActivityTabState extends State<_ActivityTab> {
 
 // ============ ACTIVITY-TAB WIDGETS ============
 
-class _WindowLabel extends StatelessWidget {
-  final int days;
-  const _WindowLabel({required this.days});
+enum _WindowPreset {
+  thisMonth,
+  last30,
+  last15,
+  last7,
+  allTime,
+}
+
+extension _WindowPresetX on _WindowPreset {
+  String get label => switch (this) {
+        _WindowPreset.thisMonth => 'This month',
+        _WindowPreset.last30 => 'Last 30 days',
+        _WindowPreset.last15 => 'Last 15 days',
+        _WindowPreset.last7 => 'Last 7 days',
+        _WindowPreset.allTime => 'All time',
+      };
+
+  /// How many days the backend should look back for this preset.
+  int get days {
+    switch (this) {
+      case _WindowPreset.thisMonth:
+        // Days elapsed in the current calendar month (incl. today).
+        return DateTime.now().day;
+      case _WindowPreset.last30:
+        return 30;
+      case _WindowPreset.last15:
+        return 15;
+      case _WindowPreset.last7:
+        return 7;
+      case _WindowPreset.allTime:
+        // Big enough to cover anyone's activity history. Backend
+        // clamps to 365 — that's fine; "all time" effectively means
+        // "as far back as the server allows".
+        return 36500;
+    }
+  }
+}
+
+class _WindowChooser extends StatelessWidget {
+  final _WindowPreset selected;
+  final ValueChanged<_WindowPreset> onChanged;
+
+  const _WindowChooser({required this.selected, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Text(
-      'LAST $days DAYS',
-      style: TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1.2,
-        color: scheme.onSurfaceVariant,
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final p in _WindowPreset.values) ...[
+            _Chip(
+              label: p.label,
+              active: p == selected,
+              scheme: scheme,
+              onTap: () => onChanged(p),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  final String label;
+  final bool active;
+  final ColorScheme scheme;
+  final VoidCallback onTap;
+
+  const _Chip({
+    required this.label,
+    required this.active,
+    required this.scheme,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: active
+              ? scheme.primary
+              : scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: active ? Colors.white : scheme.onSurfaceVariant,
+          ),
+        ),
       ),
     );
   }
@@ -1125,8 +1239,13 @@ class _LegendDot extends StatelessWidget {
 
 class _Section extends StatelessWidget {
   final String title;
+  final String? subtitle;
   final Widget child;
-  const _Section({required this.title, required this.child});
+  const _Section({
+    required this.title,
+    this.subtitle,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1150,11 +1269,394 @@ class _Section extends StatelessWidget {
               color: scheme.onSurfaceVariant,
             ),
           ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              subtitle!,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurface,
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           child,
         ],
       ),
     );
+  }
+}
+
+// ============ PERSONAL RECORDS STRIP ============
+
+class _PersonalRecordsStrip extends StatefulWidget {
+  final List<ActivityRecordsByType> records;
+  const _PersonalRecordsStrip({required this.records});
+
+  @override
+  State<_PersonalRecordsStrip> createState() =>
+      _PersonalRecordsStripState();
+}
+
+class _PersonalRecordsStripState extends State<_PersonalRecordsStrip> {
+  /// Index into `widget.records` of the currently-shown type. The list
+  /// comes back from the server sorted by total distance, so 0 is the
+  /// user's most-active type.
+  int _selected = 0;
+
+  /// Activity types we know how to icon. Anything else falls back to
+  /// the generic `directions_run` icon.
+  IconData _iconFor(String type) => switch (type.toUpperCase()) {
+        'RUNNING' => Icons.directions_run,
+        'BIKING' || 'CYCLING' => Icons.directions_bike,
+        'WALKING' => Icons.directions_walk,
+        _ => Icons.directions_run,
+      };
+
+  String _labelFor(String type) =>
+      type.isEmpty ? '—' : type[0] + type.substring(1).toLowerCase();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    if (widget.records.isEmpty) return const SizedBox.shrink();
+    final selected = widget.records[_selected.clamp(0, widget.records.length - 1)];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Type chip row — only renders when the user has more than one
+        // activity type with data; otherwise the chips would be a row
+        // of one and add visual noise for nothing.
+        if (widget.records.length > 1) ...[
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (int i = 0; i < widget.records.length; i++) ...[
+                  _TypeChip(
+                    icon: _iconFor(widget.records[i].activityType),
+                    label: _labelFor(widget.records[i].activityType),
+                    active: i == _selected,
+                    scheme: scheme,
+                    onTap: () => setState(() => _selected = i),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+
+        // 2x2 grid of record tiles for the selected type.
+        Row(children: [
+          Expanded(
+            child: _RecordTile(
+              icon: Icons.straighten,
+              label: 'Longest',
+              value: selected.longestKm > 0
+                  ? '${selected.longestKm.toStringAsFixed(2)} km'
+                  : '—',
+              scheme: scheme,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _RecordTile(
+              icon: Icons.timer_outlined,
+              label: 'Longest time',
+              value: selected.longestDurationSeconds > 0
+                  ? _formatDuration(selected.longestDurationSeconds)
+                  : '—',
+              scheme: scheme,
+            ),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(
+            child: _RecordTile(
+              icon: Icons.bolt,
+              label: 'Fastest pace',
+              value: selected.fastestPaceMinPerKm > 0
+                  ? _formatPace(selected.fastestPaceMinPerKm)
+                  : '—',
+              scheme: scheme,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _RecordTile(
+              icon: Icons.repeat,
+              label: 'Sessions',
+              value: selected.sessions > 0 ? '${selected.sessions}' : '—',
+              scheme: scheme,
+            ),
+          ),
+        ]),
+      ],
+    );
+  }
+
+  static String _formatDuration(int seconds) {
+    final h = seconds ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    if (h > 0) return '${h}h ${m}m';
+    return '${m}m';
+  }
+
+  static String _formatPace(double minPerKm) {
+    final m = minPerKm.floor();
+    final sec = ((minPerKm - m) * 60).round();
+    return "$m'${sec.toString().padLeft(2, '0')}\"";
+  }
+}
+
+class _TypeChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool active;
+  final ColorScheme scheme;
+  final VoidCallback onTap;
+
+  const _TypeChip({
+    required this.icon,
+    required this.label,
+    required this.active,
+    required this.scheme,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: active
+              ? scheme.primary.withAlpha(30)
+              : scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: active
+                ? scheme.primary.withAlpha(120)
+                : Colors.transparent,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: active ? scheme.primary : scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: active ? scheme.primary : scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RecordTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final ColorScheme scheme;
+
+  const _RecordTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.scheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.primary.withAlpha(15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.primary.withAlpha(40)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: scheme.primary),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: scheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============ ACTIVITY HEATMAP CALENDAR ============
+
+class _ActivityHeatmapCalendar extends StatelessWidget {
+  final List<ActivityHeatmapDay> days;
+  const _ActivityHeatmapCalendar({required this.days});
+
+  static const int _weeks = 12;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    // Index sparse data by ISO date for O(1) lookup while painting.
+    final byDay = <String, ActivityHeatmapDay>{
+      for (final d in days) d.day: d,
+    };
+
+    // Find the max for color scaling. Falls back to 1 to avoid /0.
+    final maxKm =
+        days.fold<double>(0, (m, d) => d.distanceKm > m ? d.distanceKm : m);
+    final scale = maxKm <= 0 ? 1.0 : maxKm;
+
+    // The grid runs 12 columns (weeks) × 7 rows (days). The most recent
+    // week is the rightmost column. Each column starts on Monday.
+    final today = DateTime.now();
+    // Snap to ISO Monday of this week.
+    final mondayThisWeek =
+        today.subtract(Duration(days: today.weekday - 1));
+
+    final cols = <Widget>[];
+    for (int w = _weeks - 1; w >= 0; w--) {
+      final colDays = <Widget>[];
+      for (int d = 0; d < 7; d++) {
+        final cellDate = mondayThisWeek
+            .subtract(Duration(days: w * 7))
+            .add(Duration(days: d));
+        // Future dates within the current week → empty/dimmed cell.
+        final isFuture =
+            cellDate.isAfter(DateTime(today.year, today.month, today.day));
+        final key = _isoKey(cellDate);
+        final entry = byDay[key];
+        final dist = entry?.distanceKm ?? 0;
+        colDays.add(_HeatCell(
+          intensity: isFuture ? -1 : dist / scale,
+          scheme: scheme,
+          tooltip: isFuture
+              ? null
+              : entry == null
+                  ? '${cellDate.day}/${cellDate.month} · No activity'
+                  : '${cellDate.day}/${cellDate.month} · '
+                      '${entry.distanceKm.toStringAsFixed(1)} km · '
+                      '${entry.sessions} session${entry.sessions == 1 ? "" : "s"}',
+        ));
+        if (d < 6) colDays.add(const SizedBox(height: 3));
+      }
+      cols.add(Column(children: colDays));
+      if (w > 0) cols.add(const SizedBox(width: 3));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          reverse: true,
+          child: Row(children: cols),
+        ),
+        const SizedBox(height: 10),
+        // Legend strip
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text('Less',
+                style: TextStyle(
+                    fontSize: 10, color: scheme.onSurfaceVariant)),
+            const SizedBox(width: 6),
+            for (final i in const [0.0, 0.25, 0.5, 0.75, 1.0]) ...[
+              _HeatCell(intensity: i, scheme: scheme),
+              const SizedBox(width: 2),
+            ],
+            const SizedBox(width: 4),
+            Text('More',
+                style: TextStyle(
+                    fontSize: 10, color: scheme.onSurfaceVariant)),
+          ],
+        ),
+      ],
+    );
+  }
+
+  static String _isoKey(DateTime dt) {
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    return '${dt.year}-$m-$d';
+  }
+}
+
+class _HeatCell extends StatelessWidget {
+  /// -1 = future (dimmed), 0..1 = activity intensity.
+  final double intensity;
+  final ColorScheme scheme;
+  final String? tooltip;
+
+  const _HeatCell({
+    required this.intensity,
+    required this.scheme,
+    this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color;
+    if (intensity < 0) {
+      color = scheme.surfaceContainerHighest.withAlpha(80);
+    } else if (intensity == 0) {
+      color = scheme.surfaceContainerHighest;
+    } else {
+      // Step into 4 buckets so the gradient looks like GitHub's.
+      final step = intensity <= 0.25
+          ? 60
+          : intensity <= 0.5
+              ? 110
+              : intensity <= 0.75
+                  ? 180
+                  : 230;
+      color = scheme.primary.withAlpha(step);
+    }
+    final cell = Container(
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(4),
+      ),
+    );
+    if (tooltip == null) return cell;
+    return Tooltip(message: tooltip!, child: cell);
   }
 }
 
@@ -1567,22 +2069,46 @@ String _localDateTime(String iso) {
 // visibility — that's a Chunk-later item. For now non-self shows a
 // placeholder.
 
-class _ClubsTab extends StatelessWidget {
+class _ClubsTab extends StatefulWidget {
   final UserProfile profile;
   final UserStats stats;
   const _ClubsTab({required this.profile, required this.stats});
 
   @override
+  State<_ClubsTab> createState() => _ClubsTabState();
+}
+
+class _ClubsTabState extends State<_ClubsTab> {
+  @override
+  void initState() {
+    super.initState();
+    // Ensure the provider has fresh data when the tab opens. The
+    // provider's loadMyClubs() internally guards against duplicate
+    // concurrent calls, but a direct call here means we don't depend
+    // on the user having visited the Groups tab first.
+    if (widget.profile.isSelf) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.read<GroupsProvider>().loadMyClubs();
+      });
+    }
+  }
+
+  Future<void> _refresh() =>
+      context.read<GroupsProvider>().loadMyClubs();
+
+  @override
   Widget build(BuildContext context) {
-    if (!_canViewContent(profile, stats)) {
+    if (!_canViewContent(widget.profile, widget.stats)) {
       return const _LockedTab(
         icon: Icons.groups_outlined,
         label: 'Clubs are private',
         detail: 'Follow this user to see their clubs.',
       );
     }
-    if (!profile.isSelf) {
-      final scheme = Theme.of(context).colorScheme;
+
+    final scheme = Theme.of(context).colorScheme;
+
+    if (!widget.profile.isSelf) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -1594,66 +2120,170 @@ class _ClubsTab extends StatelessWidget {
         ),
       );
     }
-    // Self-view — reuse the provider's already-loaded grouping.
+
     final provider = context.watch<GroupsProvider>();
     final all = provider.allMyClubs;
-    final scheme = Theme.of(context).colorScheme;
+
     if (all.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Text("You haven't joined any clubs yet.",
-              style: TextStyle(color: scheme.onSurfaceVariant)),
-        ),
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: all.length,
-      itemBuilder: (context, i) {
-        final c = all[i];
-        final cardColor =
-            Theme.of(context).cardTheme.color ?? scheme.surface;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: cardColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: scheme.outlineVariant),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: scheme.primary.withAlpha(30),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child:
-                    Icon(Icons.groups, size: 22, color: scheme.primary),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
+      return RefreshIndicator(
+        onRefresh: _refresh,
+        child: ListView(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: Center(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(c.name,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w600)),
-                    Text('@${c.handle}',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant)),
+                    Icon(Icons.groups_outlined,
+                        size: 48, color: scheme.onSurfaceVariant),
+                    const SizedBox(height: 12),
+                    Text("You haven't joined any clubs yet.",
+                        style:
+                            TextStyle(color: scheme.onSurfaceVariant)),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
-            ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: all.length,
+        itemBuilder: (context, i) => _ProfileClubCard(club: all[i]),
+      ),
+    );
+  }
+}
+
+class _ProfileClubCard extends StatelessWidget {
+  final Club club;
+  const _ProfileClubCard({required this.club});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => ClubDetailPage(clubId: club.id)),
           ),
-        );
-      },
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withAlpha(30),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.groups,
+                      size: 28, color: scheme.primary),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              club.name,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (!club.isPublic) ...[
+                            const SizedBox(width: 6),
+                            Icon(Icons.lock,
+                                size: 13,
+                                color: scheme.onSurfaceVariant),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '@${club.handle} · ${club.memberCount} ${club.memberCount == 1 ? "member" : "members"}',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (club.userRole != null) ...[
+                        const SizedBox(height: 8),
+                        _ProfileClubRoleTag(role: club.userRole!),
+                      ],
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right,
+                    color: scheme.onSurfaceVariant),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileClubRoleTag extends StatelessWidget {
+  final ClubRole role;
+  const _ProfileClubRoleTag({required this.role});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (bg, fg, label) = switch (role) {
+      ClubRole.owner =>
+        (Colors.amber.withAlpha(40), Colors.amber.shade800, 'OWNER'),
+      ClubRole.admin =>
+        (scheme.primary.withAlpha(30), scheme.primary, 'ADMIN'),
+      ClubRole.member => (
+          scheme.surfaceContainerHighest,
+          scheme.onSurfaceVariant,
+          'MEMBER'
+        ),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: fg,
+          letterSpacing: 0.5,
+        ),
+      ),
     );
   }
 }
