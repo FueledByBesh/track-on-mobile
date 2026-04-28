@@ -12,7 +12,10 @@ import 'package:trackon_mobile/data/services/follow_service.dart';
 import 'package:trackon_mobile/data/services/user_post_service.dart';
 import 'package:trackon_mobile/data/services/user_service.dart';
 
+import '../pages/groups/create_post_page.dart';
+import '../pages/groups/post_detail_page.dart';
 import 'followers_list_page.dart';
+import 'post_attachments_viewer.dart';
 import 'edit_profile_page.dart';
 import 'user_avatar.dart';
 
@@ -1167,27 +1170,62 @@ class _PostsTab extends StatefulWidget {
 }
 
 class _PostsTabState extends State<_PostsTab> {
-  late Future<List<post_model.Post>> _future;
+  List<post_model.Post> _posts = const [];
+  bool _loading = true;
+  bool _failed = false;
 
   @override
   void initState() {
     super.initState();
-    _future = _load();
+    _load();
   }
 
   /// Fetches both kinds in parallel and interleaves by createdAt DESC.
-  /// Mirrors the backend feed composition for a single user's timeline.
-  Future<List<post_model.Post>> _load() async {
-    if (!_canViewContent(widget.profile, widget.stats)) return const [];
-    final clubPosts = context.read<ClubPostApiService>();
-    final userPosts = context.read<UserPostApiService>();
-    final results = await Future.wait([
-      clubPosts.getByAuthor(widget.profile.id),
-      userPosts.getByAuthor(widget.profile.id),
-    ]);
-    final merged = [...results[0], ...results[1]];
-    merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return merged;
+  /// [silent] skips the spinner — used for refreshes after actions
+  /// (like/dislike, post create, returning from detail).
+  Future<void> _load({bool silent = false}) async {
+    if (!_canViewContent(widget.profile, widget.stats)) {
+      if (mounted) setState(() { _posts = const []; _loading = false; });
+      return;
+    }
+    if (!silent && mounted) setState(() => _loading = true);
+    try {
+      final clubPosts = context.read<ClubPostApiService>();
+      final userPosts = context.read<UserPostApiService>();
+      final results = await Future.wait([
+        clubPosts.getByAuthor(widget.profile.id),
+        userPosts.getByAuthor(widget.profile.id),
+      ]);
+      final merged = [...results[0], ...results[1]];
+      merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      if (mounted) {
+        setState(() {
+          _posts = merged;
+          _loading = false;
+          _failed = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() { _loading = false; _failed = true; });
+    }
+  }
+
+  Future<void> _openComposer() async {
+    final refreshed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const CreatePostPage()),
+    );
+    if (refreshed == true) _load(silent: true);
+  }
+
+  Future<void> _openPost(post_model.Post post) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PostDetailPage(post: post)),
+    );
+    // The detail page can mutate likes/dislikes/comments; refresh on
+    // return so the list reflects the latest server state.
+    _load(silent: true);
   }
 
   @override
@@ -1200,42 +1238,108 @@ class _PostsTabState extends State<_PostsTab> {
       );
     }
     final scheme = Theme.of(context).colorScheme;
+    final isSelf = widget.profile.isSelf;
+
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_failed) {
+      return Center(
+        child: Text('Could not load posts',
+            style: TextStyle(color: scheme.onSurfaceVariant)),
+      );
+    }
+
     return RefreshIndicator(
-      onRefresh: () async {
-        setState(() => _future = _load());
-        await _future;
-      },
-      child: FutureBuilder<List<post_model.Post>>(
-        future: _future,
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snap.hasError) {
-            return Center(
-                child: Text('Could not load posts',
-                    style: TextStyle(color: scheme.onSurfaceVariant)));
-          }
-          final posts = snap.data ?? const [];
-          if (posts.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Text(
-                  widget.profile.isSelf
-                      ? "You haven't posted yet."
-                      : 'No posts yet.',
-                  style: TextStyle(color: scheme.onSurfaceVariant),
+      onRefresh: () => _load(silent: true),
+      child: _posts.isEmpty
+          ? ListView(
+              children: [
+                if (isSelf)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: _ComposeRow(onTap: _openComposer),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.forum_outlined,
+                          size: 48, color: scheme.onSurfaceVariant),
+                      const SizedBox(height: 12),
+                      Text(
+                        isSelf
+                            ? "You haven't posted yet."
+                            : 'No posts yet.',
+                        textAlign: TextAlign.center,
+                        style:
+                            TextStyle(color: scheme.onSurfaceVariant),
+                      ),
+                      if (isSelf) ...[
+                        const SizedBox(height: 16),
+                        FilledButton.icon(
+                          onPressed: _openComposer,
+                          icon: const Icon(Icons.edit_outlined, size: 16),
+                          label: const Text('Create your first post'),
+                          style: FilledButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20)),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-              ),
-            );
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: posts.length,
-            itemBuilder: (context, i) => _ProfilePostCard(post: posts[i]),
-          );
-        },
+              ],
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              itemCount: _posts.length + (isSelf ? 1 : 0),
+              itemBuilder: (context, i) {
+                if (isSelf && i == 0) {
+                  return _ComposeRow(onTap: _openComposer);
+                }
+                final post = _posts[isSelf ? i - 1 : i];
+                return _ProfilePostCard(
+                  post: post,
+                  onChanged: () => _load(silent: true),
+                  onTap: () => _openPost(post),
+                );
+              },
+            ),
+    );
+  }
+}
+
+class _ComposeRow extends StatelessWidget {
+  final VoidCallback onTap;
+  const _ComposeRow({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.edit_outlined, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Text(
+              "What's on your mind?",
+              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 14),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1243,69 +1347,149 @@ class _PostsTabState extends State<_PostsTab> {
 
 class _ProfilePostCard extends StatelessWidget {
   final post_model.Post post;
-  const _ProfilePostCard({required this.post});
+
+  /// Called after a like/dislike toggle so the parent can refresh its
+  /// list and pick up the new counts from the server.
+  final VoidCallback? onChanged;
+
+  /// Override the default "open detail page" behavior — used so the
+  /// parent can refresh its list when the user returns from detail.
+  final VoidCallback? onTap;
+
+  const _ProfilePostCard({
+    required this.post,
+    this.onChanged,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: cardColor,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Kind badge: club name for club posts, "Personal" for user posts.
-          Row(
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: scheme.primary.withAlpha(30),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  post.kind == post_model.PostKind.club
-                      ? (post.clubName ?? 'Club')
-                      : 'Personal',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: scheme.primary,
+          // Kind badge + timestamp
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withAlpha(25),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    post.kind == post_model.PostKind.club
+                        ? (post.clubName ?? 'Club')
+                        : 'Personal',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.primary,
+                    ),
                   ),
                 ),
-              ),
-              const Spacer(),
-              Text(_relativeTime(post.createdAt),
-                  style: TextStyle(
-                      fontSize: 11, color: scheme.onSurfaceVariant)),
-            ],
+                const Spacer(),
+                Text(_localDateTime(post.createdAt),
+                    style: TextStyle(
+                        fontSize: 12, color: scheme.onSurfaceVariant)),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
-          Text(post.content, style: Theme.of(context).textTheme.bodyMedium),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(Icons.favorite_outline,
-                  size: 16, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 4),
-              Text('${post.likes}',
-                  style: TextStyle(
-                      fontSize: 12, color: scheme.onSurfaceVariant)),
-              const SizedBox(width: 16),
-              Icon(Icons.mode_comment_outlined,
-                  size: 16, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 4),
-              Text('${post.commentCount}',
-                  style: TextStyle(
-                      fontSize: 12, color: scheme.onSurfaceVariant)),
-            ],
+
+          // Content + attachments — tap anywhere to open detail.
+          InkWell(
+            onTap: onTap ??
+                () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => PostDetailPage(post: post)),
+                    ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                  child: Text(
+                    post.content,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(height: 1.45),
+                  ),
+                ),
+                if (post.attachments.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+                    child:
+                        PostAttachmentsViewer(attachments: post.attachments),
+                  ),
+              ],
+            ),
+          ),
+
+          Divider(height: 1, color: scheme.outlineVariant),
+
+          // Action bar
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                _ProfileActionBtn(
+                  icon: post.userLiked == true
+                      ? Icons.thumb_up_rounded
+                      : Icons.thumb_up_outlined,
+                  label: '${post.likes}',
+                  color: post.userLiked == true
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
+                  onTap: () async {
+                    await context
+                        .read<GroupsProvider>()
+                        .likePost(post.kind, post.id, true);
+                    onChanged?.call();
+                  },
+                ),
+                _ProfileActionBtn(
+                  icon: post.userLiked == false
+                      ? Icons.thumb_down_rounded
+                      : Icons.thumb_down_outlined,
+                  label: '${post.dislikes}',
+                  color: post.userLiked == false
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
+                  onTap: () async {
+                    await context
+                        .read<GroupsProvider>()
+                        .likePost(post.kind, post.id, false);
+                    onChanged?.call();
+                  },
+                ),
+                _ProfileActionBtn(
+                  icon: Icons.mode_comment_outlined,
+                  label: '${post.commentCount}',
+                  color: scheme.onSurfaceVariant,
+                  onTap: onTap ??
+                      () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    PostDetailPage(post: post)),
+                          ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1313,14 +1497,63 @@ class _ProfilePostCard extends StatelessWidget {
   }
 }
 
-String _relativeTime(String iso) {
+class _ProfileActionBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
+
+  const _ProfileActionBtn({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 22, color: color),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Local date + time, e.g. "28 Apr · 14:32" (current year) or
+/// "12 Mar 2024 · 14:32" (prior years).
+String _localDateTime(String iso) {
   try {
     final dt = DateTime.parse(iso).toLocal();
-    final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
-    if (diff.inHours < 24) return '${diff.inHours}h';
-    if (diff.inDays < 7) return '${diff.inDays}d';
-    return '${diff.inDays ~/ 7}w';
+    final now = DateTime.now();
+    const months = [
+      'Jan','Feb','Mar','Apr','May','Jun',
+      'Jul','Aug','Sep','Oct','Nov','Dec'
+    ];
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final mm = dt.minute.toString().padLeft(2, '0');
+    if (dt.year == now.year) {
+      return '${dt.day} ${months[dt.month - 1]} · $hh:$mm';
+    }
+    return '${dt.day} ${months[dt.month - 1]} ${dt.year} · $hh:$mm';
   } catch (_) {
     return '';
   }

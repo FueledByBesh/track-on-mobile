@@ -21,6 +21,11 @@ class RoutePreview extends StatelessWidget {
   /// state for legacy activities.
   final String? encodedPolyline;
 
+  /// Pre-decoded points. Used when the caller already has a
+  /// `List<RoutePoint>` from the detail endpoint and doesn't need the
+  /// decode step. Ignored when [encodedPolyline] is non-null.
+  final List<MapPoint>? points;
+
   /// Corner radius applied via [ClipRRect] when the widget is placed
   /// inside a container that has its own border radius the polyline
   /// shouldn't bleed past. Defaults to 0 (no clip).
@@ -31,7 +36,8 @@ class RoutePreview extends StatelessWidget {
 
   const RoutePreview({
     super.key,
-    required this.encodedPolyline,
+    this.encodedPolyline,
+    this.points,
     this.borderRadius = BorderRadius.zero,
     this.strokeColor,
   });
@@ -39,12 +45,19 @@ class RoutePreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final encoded = encodedPolyline;
-    if (encoded == null || encoded.isEmpty) {
+
+    // Resolve points: prefer pre-decoded list, fall back to polyline decode.
+    List<MapPoint> resolved;
+    if (encodedPolyline != null && encodedPolyline!.isNotEmpty) {
+      resolved = PolylineDecoder.decode(encodedPolyline!);
+    } else if (points != null && points!.isNotEmpty) {
+      resolved = points!;
+    } else {
       return _Placeholder(scheme: scheme, borderRadius: borderRadius);
     }
-    final points = PolylineDecoder.decode(encoded);
-    if (points.length < 2) {
+
+    final points0 = resolved;
+    if (points0.length < 2) {
       return _Placeholder(scheme: scheme, borderRadius: borderRadius);
     }
 
@@ -54,7 +67,7 @@ class RoutePreview extends StatelessWidget {
         decoration: BoxDecoration(gradient: _backgroundGradient(scheme)),
         child: CustomPaint(
           painter: _RoutePainter(
-            points: points,
+            points: points0,
             color: strokeColor ?? scheme.primary,
           ),
           child: const SizedBox.expand(),

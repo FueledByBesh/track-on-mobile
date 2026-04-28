@@ -83,16 +83,12 @@ class GroupsProvider extends ChangeNotifier {
   Future<Post> createClubPost({
     required String clubId,
     required String content,
-    String? imageUrl,
-    PostAttachmentKind? attachmentKind,
-    String? attachmentRefId,
+    List<PostAttachmentRequest> attachments = const [],
   }) async {
     final post = await _clubPosts.create(
       clubId: clubId,
       content: content,
-      imageUrl: imageUrl,
-      attachmentKind: attachmentKind,
-      attachmentRefId: attachmentRefId,
+      attachments: attachments,
     );
     await loadFeed();
     return post;
@@ -100,15 +96,11 @@ class GroupsProvider extends ChangeNotifier {
 
   Future<Post> createUserPost({
     required String content,
-    String? imageUrl,
-    PostAttachmentKind? attachmentKind,
-    String? attachmentRefId,
+    List<PostAttachmentRequest> attachments = const [],
   }) async {
     final post = await _userPosts.create(
       content: content,
-      imageUrl: imageUrl,
-      attachmentKind: attachmentKind,
-      attachmentRefId: attachmentRefId,
+      attachments: attachments,
     );
     await loadFeed();
     return post;

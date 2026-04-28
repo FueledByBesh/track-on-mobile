@@ -90,11 +90,16 @@ class UploadPlan {
   /// Server-reported ISO-8601 expiry for [putUrl].
   final DateTime? expiresAt;
 
+  /// Non-null for private kinds (post_image). Pass to post creation so
+  /// the server can claim the staged GCS object.
+  final String? tempMediaId;
+
   const UploadPlan({
     required this.putUrl,
     required this.objectPath,
     required this.publicUrl,
     required this.expiresAt,
+    this.tempMediaId,
   });
 
   factory UploadPlan.fromJson(Map<String, dynamic> json) {
@@ -105,6 +110,7 @@ class UploadPlan {
       expiresAt: json['expires_at'] != null
           ? DateTime.tryParse(json['expires_at'] as String)
           : null,
+      tempMediaId: json['temp_media_id'] as String?,
     );
   }
 }
