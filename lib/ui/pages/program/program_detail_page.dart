@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../../data/models/workout.dart';
 import '../../../data/providers/fitness_provider.dart';
-import '../fitnesspage/core.dart';
+import '../fitnesspage/training_session_page.dart';
 import '../workout/about_workout_page.dart';
 
 const _weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
