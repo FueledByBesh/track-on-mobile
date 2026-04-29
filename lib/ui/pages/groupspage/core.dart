@@ -7,6 +7,8 @@ import 'package:trackon_mobile/data/models/user.dart';
 import 'package:trackon_mobile/data/providers/groups_provider.dart';
 import 'package:trackon_mobile/ui/pages/clubs/club_detail_page.dart';
 import 'package:trackon_mobile/ui/pages/clubs/create_club_page.dart';
+import 'package:trackon_mobile/ui/pages/groups/post_detail_page.dart';
+import 'package:trackon_mobile/ui/sharedwidgets/post_attachments_viewer.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/profile_page.dart';
 
 class GroupsPage extends StatefulWidget {
@@ -136,117 +138,217 @@ class _PostCard extends StatelessWidget {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: cardColor,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Author row — tap the avatar / name to open the profile.
+          // Author row
           InkWell(
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
                   builder: (_) => ProfilePage(userId: post.authorId)),
             ),
-            borderRadius: BorderRadius.circular(8),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                      color: scheme.primary.withAlpha(100),
-                      shape: BoxShape.circle),
-                  child: Center(
-                      child: Text(initials,
-                          style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                              color: scheme.onSurface))),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(post.authorName,
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w600)),
-                      if (post.clubName != null)
-                        Text(post.clubName!,
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: scheme.primary.withAlpha(80),
+                      image: post.authorAvatarUrl != null &&
+                              post.authorAvatarUrl!.isNotEmpty
+                          ? DecorationImage(
+                              image: NetworkImage(post.authorAvatarUrl!),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                    ),
+                    child: post.authorAvatarUrl == null ||
+                            post.authorAvatarUrl!.isEmpty
+                        ? Center(
+                            child: Text(initials,
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                    color: scheme.primary)))
+                        : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(post.authorName,
                             style: Theme.of(context)
                                 .textTheme
-                                .bodySmall
-                                ?.copyWith(color: scheme.primary)),
-                    ],
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w700)),
+                        if (post.clubName != null)
+                          Text(post.clubName!,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: scheme.primary,
+                                  fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                  ),
+                  Text(_localDateTime(post.createdAt),
+                      style: TextStyle(
+                          fontSize: 12, color: scheme.onSurfaceVariant)),
+                ],
+              ),
+            ),
+          ),
+
+          // Content + attachments — tap anywhere here to open detail.
+          InkWell(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => PostDetailPage(post: post)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                  child: Text(
+                    post.content,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(height: 1.45),
+                  ),
+                ),
+                if (post.attachments.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+                    child:
+                        PostAttachmentsViewer(attachments: post.attachments),
+                  ),
+              ],
+            ),
+          ),
+
+          Divider(height: 1, color: scheme.outlineVariant),
+
+          // Action bar
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                _ActionBtn(
+                  icon: post.userLiked == true
+                      ? Icons.thumb_up_rounded
+                      : Icons.thumb_up_outlined,
+                  label: '${post.likes}',
+                  color: post.userLiked == true
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
+                  onTap: () => context
+                      .read<GroupsProvider>()
+                      .likePost(post.kind, post.id, true),
+                ),
+                _ActionBtn(
+                  icon: post.userLiked == false
+                      ? Icons.thumb_down_rounded
+                      : Icons.thumb_down_outlined,
+                  label: '${post.dislikes}',
+                  color: post.userLiked == false
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
+                  onTap: () => context
+                      .read<GroupsProvider>()
+                      .likePost(post.kind, post.id, false),
+                ),
+                _ActionBtn(
+                  icon: Icons.mode_comment_outlined,
+                  label: '${post.commentCount}',
+                  color: scheme.onSurfaceVariant,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => PostDetailPage(post: post)),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          Text(post.content, style: Theme.of(context).textTheme.bodyMedium),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              GestureDetector(
-                onTap: () => context
-                    .read<GroupsProvider>()
-                    .likePost(post.kind, post.id, true),
-                child: Row(children: [
-                  Icon(
-                    post.userLiked == true
-                        ? Icons.favorite
-                        : Icons.favorite_outline,
-                    size: 20,
-                    color: post.userLiked == true
-                        ? Colors.red
-                        : scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 4),
-                  Text('${post.likes}',
-                      style: Theme.of(context).textTheme.bodySmall),
-                ]),
-              ),
-              const SizedBox(width: 24),
-              GestureDetector(
-                onTap: () => context
-                    .read<GroupsProvider>()
-                    .likePost(post.kind, post.id, false),
-                child: Row(children: [
-                  Icon(
-                    post.userLiked == false
-                        ? Icons.thumb_down
-                        : Icons.thumb_down_outlined,
-                    size: 20,
-                    color: post.userLiked == false
-                        ? Colors.blue
-                        : scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 4),
-                  Text('${post.dislikes}',
-                      style: Theme.of(context).textTheme.bodySmall),
-                ]),
-              ),
-              const SizedBox(width: 24),
-              Row(children: [
-                Icon(Icons.mode_comment_outlined,
-                    size: 20, color: scheme.onSurfaceVariant),
-                const SizedBox(width: 4),
-                Text('${post.commentCount}',
-                    style: Theme.of(context).textTheme.bodySmall),
-              ]),
-            ],
-          ),
         ],
       ),
     );
+  }
+}
+
+class _ActionBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
+
+  const _ActionBtn({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 22, color: color),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Local date + time, e.g. "28 Apr · 14:32" (current year) or
+/// "12 Mar 2024 · 14:32" (prior years).
+String _localDateTime(String iso) {
+  try {
+    final dt = DateTime.parse(iso).toLocal();
+    final now = DateTime.now();
+    const months = [
+      'Jan','Feb','Mar','Apr','May','Jun',
+      'Jul','Aug','Sep','Oct','Nov','Dec'
+    ];
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final mm = dt.minute.toString().padLeft(2, '0');
+    if (dt.year == now.year) {
+      return '${dt.day} ${months[dt.month - 1]} · $hh:$mm';
+    }
+    return '${dt.day} ${months[dt.month - 1]} ${dt.year} · $hh:$mm';
+  } catch (_) {
+    return '';
   }
 }
 

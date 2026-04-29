@@ -112,6 +112,8 @@ class _AddToProgramSheetState extends State<_AddToProgramSheet> {
   Widget build(BuildContext context) {
     final provider = context.watch<FitnessProvider>();
     final programs = provider.programs;
+    final scheme = Theme.of(context).colorScheme;
+    final sheetColor = Theme.of(context).cardTheme.color ?? scheme.surface;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.6,
@@ -119,9 +121,9 @@ class _AddToProgramSheetState extends State<_AddToProgramSheet> {
       maxChildSize: 0.9,
       expand: false,
       builder: (context, scrollController) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        decoration: BoxDecoration(
+          color: sheetColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(
           children: [
@@ -146,7 +148,7 @@ class _AddToProgramSheetState extends State<_AddToProgramSheet> {
                 ],
               ),
             ),
-            const Divider(height: 1),
+            Divider(height: 1, color: scheme.outlineVariant),
             Expanded(
               child: ListView(
                 controller: scrollController,
@@ -164,13 +166,14 @@ class _AddToProgramSheetState extends State<_AddToProgramSheet> {
                     onSubmit: _submitCreate,
                   ),
                   if (programs.isEmpty && !provider.isLoading)
-                    const Padding(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 24),
                       child: Center(
                         child: Text(
                           'No programs yet. Create one above.',
-                          style: TextStyle(color: Colors.grey),
+                          style:
+                              TextStyle(color: scheme.onSurfaceVariant),
                         ),
                       ),
                     ),
@@ -199,6 +202,7 @@ class _AddToProgramSheetState extends State<_AddToProgramSheet> {
 class _SheetHandle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 8),
       child: Center(
@@ -206,7 +210,7 @@ class _SheetHandle extends StatelessWidget {
           width: 40,
           height: 4,
           decoration: BoxDecoration(
-            color: Colors.grey.shade300,
+            color: scheme.outlineVariant,
             borderRadius: BorderRadius.circular(2),
           ),
         ),
@@ -234,14 +238,15 @@ class _CreateNewProgramRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     if (!isExpanded) {
       return ListTile(
-        leading: const Icon(Icons.add_circle_outline, color: Color(0xFF6B5FFF)),
-        title: const Text(
+        leading: Icon(Icons.add_circle_outline, color: scheme.primary),
+        title: Text(
           'Create new program',
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            color: Color(0xFF6B5FFF),
+            color: scheme.primary,
           ),
         ),
         onTap: onExpand,
@@ -272,11 +277,11 @@ class _CreateNewProgramRow extends StatelessWidget {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.check, color: Color(0xFF6B5FFF)),
+                : Icon(Icons.check, color: scheme.primary),
             onPressed: isBusy ? null : onSubmit,
           ),
           IconButton(
-            icon: const Icon(Icons.close, color: Colors.grey),
+            icon: Icon(Icons.close, color: scheme.onSurfaceVariant),
             onPressed: isBusy ? null : onCancel,
           ),
         ],
@@ -300,14 +305,18 @@ class _ProgramRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return ListTile(
       title: Text(
         program.name,
-        style: const TextStyle(fontWeight: FontWeight.w600),
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: scheme.onSurface,
+        ),
       ),
       subtitle: Text(
         '${program.items.length} exercises',
-        style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+        style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
       ),
       trailing: isBusy
           ? const SizedBox(
@@ -317,7 +326,10 @@ class _ProgramRow extends StatelessWidget {
             )
           : Icon(
               isIn ? Icons.check_circle : Icons.add_circle_outline,
-              color: isIn ? Colors.green : const Color(0xFF6B5FFF),
+              // Green for "already in" is a widely-recognized success
+              // semantic that holds up in both light + dark themes;
+              // the "add" state uses the user's accent color.
+              color: isIn ? Colors.green : scheme.primary,
               size: 28,
             ),
       onTap: isBusy ? null : onTap,

@@ -9,10 +9,15 @@ class UserSettings {
   /// flip (private → approval on), but independently tunable after.
   final bool requireFollowApproval;
 
+  /// When false, the backend skips every in-app + push notification
+  /// for follow events targeted at this user. Defaults true.
+  final bool followNotificationsEnabled;
+
   const UserSettings({
     this.defaultStepGoal = 10000,
     this.isProfilePublic = true,
     this.requireFollowApproval = false,
+    this.followNotificationsEnabled = true,
   });
 
   factory UserSettings.fromJson(Map<String, dynamic> json) {
@@ -20,6 +25,8 @@ class UserSettings {
       defaultStepGoal: json['default_step_goal'] ?? 10000,
       isProfilePublic: json['is_profile_public'] ?? true,
       requireFollowApproval: json['require_follow_approval'] ?? false,
+      followNotificationsEnabled:
+          json['follow_notifications_enabled'] ?? true,
     );
   }
 
@@ -28,11 +35,29 @@ class UserSettings {
     int? defaultStepGoal,
     bool? isProfilePublic,
     bool? requireFollowApproval,
+    bool? followNotificationsEnabled,
   }) {
     return {
       'default_step_goal': ?defaultStepGoal,
       'is_profile_public': ?isProfilePublic,
       'require_follow_approval': ?requireFollowApproval,
+      'follow_notifications_enabled': ?followNotificationsEnabled,
     };
+  }
+
+  UserSettings copyWith({
+    int? defaultStepGoal,
+    bool? isProfilePublic,
+    bool? requireFollowApproval,
+    bool? followNotificationsEnabled,
+  }) {
+    return UserSettings(
+      defaultStepGoal: defaultStepGoal ?? this.defaultStepGoal,
+      isProfilePublic: isProfilePublic ?? this.isProfilePublic,
+      requireFollowApproval:
+          requireFollowApproval ?? this.requireFollowApproval,
+      followNotificationsEnabled:
+          followNotificationsEnabled ?? this.followNotificationsEnabled,
+    );
   }
 }

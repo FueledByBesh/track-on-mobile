@@ -114,6 +114,8 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final sheetColor = Theme.of(context).cardTheme.color ?? scheme.surface;
     final collected = _collectDates();
 
     return DraggableScrollableSheet(
@@ -122,13 +124,13 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
       maxChildSize: 0.95,
       expand: false,
       builder: (context, scrollController) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        decoration: BoxDecoration(
+          color: sheetColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(
           children: [
-            _sheetHandle(),
+            _sheetHandle(scheme),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
               child: Row(
@@ -151,9 +153,9 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
             ),
             TabBar(
               controller: _tabController,
-              labelColor: const Color(0xFF6B5FFF),
-              unselectedLabelColor: Colors.grey,
-              indicatorColor: const Color(0xFF6B5FFF),
+              labelColor: scheme.primary,
+              unselectedLabelColor: scheme.onSurfaceVariant,
+              indicatorColor: scheme.primary,
               tabs: const [
                 Tab(text: 'Dates'),
                 Tab(text: 'Repeat'),
@@ -165,19 +167,19 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
                 controller: _tabController,
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
-                  _datesTab(scrollController),
-                  _repeatTab(scrollController),
+                  _datesTab(scrollController, scheme),
+                  _repeatTab(scrollController, scheme),
                 ],
               ),
             ),
-            _bottomBar(collected),
+            _bottomBar(collected, scheme),
           ],
         ),
       ),
     );
   }
 
-  Widget _sheetHandle() {
+  Widget _sheetHandle(ColorScheme scheme) {
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 8),
       child: Center(
@@ -185,7 +187,7 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
           width: 40,
           height: 4,
           decoration: BoxDecoration(
-            color: Colors.grey.shade300,
+            color: scheme.outlineVariant,
             borderRadius: BorderRadius.circular(2),
           ),
         ),
@@ -193,7 +195,7 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
     );
   }
 
-  Widget _datesTab(ScrollController scrollController) {
+  Widget _datesTab(ScrollController scrollController, ColorScheme scheme) {
     return SingleChildScrollView(
       controller: scrollController,
       padding: const EdgeInsets.all(16),
@@ -219,28 +221,43 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
         },
         calendarStyle: CalendarStyle(
           outsideDaysVisible: false,
-          selectedDecoration: const BoxDecoration(
-            color: Color(0xFF6B5FFF),
+          defaultTextStyle: TextStyle(color: scheme.onSurface),
+          weekendTextStyle: TextStyle(color: scheme.onSurface),
+          selectedDecoration: BoxDecoration(
+            color: scheme.primary,
             shape: BoxShape.circle,
           ),
           todayDecoration: BoxDecoration(
-            color: const Color(0xFF6B5FFF).withAlpha(60),
+            color: scheme.primary.withAlpha(60),
             shape: BoxShape.circle,
           ),
-          todayTextStyle: const TextStyle(
-            color: Color(0xFF6B5FFF),
+          todayTextStyle: TextStyle(
+            color: scheme.primary,
             fontWeight: FontWeight.w600,
           ),
         ),
-        headerStyle: const HeaderStyle(
+        headerStyle: HeaderStyle(
           formatButtonVisible: false,
           titleCentered: true,
+          titleTextStyle: TextStyle(
+            color: scheme.onSurface,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+          leftChevronIcon:
+              Icon(Icons.chevron_left, color: scheme.onSurfaceVariant),
+          rightChevronIcon:
+              Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+        ),
+        daysOfWeekStyle: DaysOfWeekStyle(
+          weekdayStyle: TextStyle(color: scheme.onSurfaceVariant),
+          weekendStyle: TextStyle(color: scheme.onSurfaceVariant),
         ),
       ),
     );
   }
 
-  Widget _repeatTab(ScrollController scrollController) {
+  Widget _repeatTab(ScrollController scrollController, ColorScheme scheme) {
     const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return SingleChildScrollView(
       controller: scrollController,
@@ -248,14 +265,7 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Weekdays',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey,
-            ),
-          ),
+          _sectionLabel('Weekdays', scheme),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -275,14 +285,16 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
                       horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? const Color(0xFF6B5FFF)
-                        : Colors.grey.shade100,
+                        ? scheme.primary
+                        : scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     weekdayLabels[index],
                     style: TextStyle(
-                      color: isSelected ? Colors.white : Colors.grey.shade700,
+                      color: isSelected
+                          ? Colors.white
+                          : scheme.onSurfaceVariant,
                       fontWeight: FontWeight.w600,
                       fontSize: 12,
                     ),
@@ -292,14 +304,7 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
             }),
           ),
           const SizedBox(height: 20),
-          const Text(
-            'Date range',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey,
-            ),
-          ),
+          _sectionLabel('Date range', scheme),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -308,6 +313,7 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
                   label: 'From',
                   date: _rangeStart,
                   onPick: (d) => setState(() => _rangeStart = d),
+                  scheme: scheme,
                 ),
               ),
               const SizedBox(width: 12),
@@ -316,6 +322,7 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
                   label: 'To',
                   date: _rangeEnd,
                   onPick: (d) => setState(() => _rangeEnd = d),
+                  scheme: scheme,
                 ),
               ),
             ],
@@ -325,10 +332,22 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
     );
   }
 
+  Widget _sectionLabel(String text, ColorScheme scheme) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: scheme.onSurfaceVariant,
+      ),
+    );
+  }
+
   Widget _rangeField({
     required String label,
     required DateTime date,
     required ValueChanged<DateTime> onPick,
+    required ColorScheme scheme,
   }) {
     return GestureDetector(
       onTap: () async {
@@ -343,7 +362,7 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.grey.shade100,
+          color: scheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Column(
@@ -351,14 +370,18 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
           children: [
             Text(
               label,
-              style: const TextStyle(fontSize: 10, color: Colors.grey),
+              style: TextStyle(
+                fontSize: 10,
+                color: scheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 2),
             Text(
               '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
+                color: scheme.onSurface,
               ),
             ),
           ],
@@ -367,14 +390,14 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
     );
   }
 
-  Widget _bottomBar(List<DateTime> collected) {
+  Widget _bottomBar(List<DateTime> collected, ColorScheme scheme) {
     return SafeArea(
       top: false,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: Colors.grey.shade200)),
+          color: Theme.of(context).cardTheme.color ?? scheme.surface,
+          border: Border(top: BorderSide(color: scheme.outlineVariant)),
         ),
         child: Row(
           children: [
@@ -388,8 +411,8 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
                 style: TextStyle(
                   fontSize: 13,
                   color: collected.isEmpty
-                      ? Colors.grey.shade500
-                      : Colors.grey.shade700,
+                      ? scheme.onSurfaceVariant
+                      : scheme.onSurface,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -399,7 +422,8 @@ class _AddToDaySheetState extends State<_AddToDaySheet>
               onPressed:
                   collected.isEmpty || _isSubmitting ? null : _submit,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6B5FFF),
+                backgroundColor: scheme.primary,
+                foregroundColor: Colors.white,
                 padding:
                     const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 shape: RoundedRectangleBorder(

@@ -1,7 +1,0 @@
-{
-  "start_time": "Timestamp when the run started",
-  "start_position": {
-    "latitude": "Latitude of the starting point",
-    "longitude": "Longitude of the starting point"
-  }
-}

@@ -1,8 +1,0 @@
-{
-  "stop_time": "timestamp when the run was stopped",
-  "stop_location": {
-    "latitude": "latitude of the location where the run was stopped",
-    "longitude": "longitude of the location where the run was stopped"
-  },
-  "route_id": "ID of the predefined route"
-}

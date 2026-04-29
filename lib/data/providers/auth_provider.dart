@@ -31,6 +31,13 @@ class AuthProvider extends ChangeNotifier {
   /// so the next user can't see the previous session's data.
   Future<void> Function()? onSignedOut;
 
+  /// Fires whenever the user transitions into a logged-in state (a
+  /// completed sign-in flow, not app-launch-with-stored-tokens — that
+  /// one relies on the token already being registered from the prior
+  /// session). Wired in main.dart to register the FCM push token
+  /// with the backend.
+  Future<void> Function()? onSignedIn;
+
   bool get isLoading => _isLoading;
   bool get isLoggedIn => _isLoggedIn;
   bool get showExpiredMessage => _showExpiredMessage;
@@ -55,6 +62,14 @@ class AuthProvider extends ChangeNotifier {
       await onSignedOut?.call();
     } catch (e) {
       debugPrint('onSignedOut hook threw: $e');
+    }
+  }
+
+  Future<void> _invokeSignedInHook() async {
+    try {
+      await onSignedIn?.call();
+    } catch (e) {
+      debugPrint('onSignedIn hook threw: $e');
     }
   }
 
@@ -93,6 +108,14 @@ class AuthProvider extends ChangeNotifier {
 
     _isLoading = false;
     notifyListeners();
+
+    // Existing session survived the launch check — register the
+    // current device's push token. Idempotent on the backend, so
+    // running it every launch is fine and covers the "user already
+    // signed in when push feature shipped" case.
+    if (_isLoggedIn) {
+      unawaited(_invokeSignedInHook());
+    }
   }
 
   /// Start the Google OAuth flow:
@@ -141,6 +164,7 @@ class AuthProvider extends ChangeNotifier {
         _isLoggedIn = true;
         _isLoading = false;
         notifyListeners();
+        unawaited(_invokeSignedInHook());
         return true;
       }
     } catch (e) {
@@ -189,6 +213,12 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    // Fire the signed-out hook FIRST so any authed cleanup calls
+    // (e.g. PushMessagingService.stop() → DELETE /api/devices/...)
+    // complete before we wipe the access token. After clearTokens
+    // runs those requests would 401.
+    await _invokeSignedOutHook();
+
     // Best-effort backend cleanup: revoke Google tokens + clear DB rows.
     // If we're offline or the backend is down, just clear local state —
     // the user tapped "sign out" and they expect to be logged out.
@@ -198,7 +228,6 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('Logout endpoint failed, clearing local state anyway: $e');
     }
     await ApiClient.clearTokens();
-    await _invokeSignedOutHook();
     _isLoggedIn = false;
     notifyListeners();
   }

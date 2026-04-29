@@ -1,5 +1,6 @@
 import '../api_client.dart';
 import '../models/user.dart';
+import '../models/user_activity_stats.dart';
 import '../models/user_settings.dart';
 import 'cache_store.dart';
 import 'cached_http.dart';
@@ -89,6 +90,30 @@ class UserApiService {
       fromJson: UserStats.fromJson,
     );
     return res.value;
+  }
+
+  // ============ ACTIVITY STATS (profile tab) ============
+
+  /// Aggregate activity summary for the profile's Activity tab.
+  /// Not cached — it's a derived view that the user expects to be
+  /// current, and server-side it's just three cheap SUM queries.
+  Future<UserActivityStats> getMyActivityStats({int days = 30}) async {
+    final res = await _api.dio.get(
+      '/api/users/me/activity-stats',
+      queryParameters: {'days': days},
+    );
+    return UserActivityStats.fromJson(res.data as Map<String, dynamic>);
+  }
+
+  Future<UserActivityStats> getActivityStatsById(
+    String userId, {
+    int days = 30,
+  }) async {
+    final res = await _api.dio.get(
+      '/api/users/$userId/activity-stats',
+      queryParameters: {'days': days},
+    );
+    return UserActivityStats.fromJson(res.data as Map<String, dynamic>);
   }
 
   // ============ UPDATE (self) ============

@@ -31,7 +31,11 @@ import 'data/services/user_service.dart';
 import 'data/services/notification_service.dart';
 import 'data/services/cache_store.dart';
 import 'data/services/cached_http.dart';
+import 'data/services/device_service.dart';
+import 'data/services/push_messaging_service.dart';
 import 'data/services/storage_service.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'ui/myapp.dart';
@@ -44,6 +48,16 @@ Future<void> main() async {
 
   // Warm the in-app logger so the first real call doesn't race the DB open.
   Logger.i('APP', 'App launched');
+
+  // Firebase must be initialized before any FCM calls. Failure here
+  // (e.g. missing google-services.json on a dev build) is logged and
+  // swallowed — the rest of the app runs fine without push.
+  try {
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(firebaseBackgroundMessageHandler);
+  } catch (e) {
+    Logger.w('APP', 'Firebase init failed; push will be disabled: $e');
+  }
 
   // Load theme preferences before runApp so the first frame has the
   // right mode + accent (no flash of wrong colors).
@@ -76,6 +90,12 @@ Future<void> main() async {
   final followApiService = FollowApiService(apiClient);
   final storageApiService = StorageApiService(apiClient);
   final activityApiService = ActivityApiService(apiClient);
+  final deviceApiService = DeviceApiService(apiClient);
+  final pushMessaging = PushMessagingService(deviceApiService);
+  // Handlers for onMessage / onMessageOpenedApp bind once at boot.
+  // They don't need an authenticated user; the ValueNotifiers they
+  // flip are consumed by widgets further down the tree.
+  await pushMessaging.bindHandlers();
 
   runApp(
     MultiProvider(
@@ -92,6 +112,8 @@ Future<void> main() async {
         Provider<CachedHttp>.value(value: cachedHttp),
         Provider<StorageApiService>.value(value: storageApiService),
         Provider<ActivityApiService>.value(value: activityApiService),
+        Provider<DeviceApiService>.value(value: deviceApiService),
+        Provider<PushMessagingService>.value(value: pushMessaging),
         ChangeNotifierProvider(
           create: (_) {
             final authProvider = AuthProvider(apiClient);
@@ -99,9 +121,15 @@ Future<void> main() async {
             // whole UI needs to bounce to the login page. Wire it here,
             // once both objects exist.
             apiClient.onAuthExpired = authProvider.handleAuthExpired;
-            // Wipe the HTTP response cache on sign-out / auth-expiry so
-            // the next user doesn't inherit the previous session's data.
-            authProvider.onSignedOut = cacheStore.clear;
+            // Signed-in: register this device for push. Signed-out:
+            // wipe the HTTP response cache + drop the FCM token so
+            // the next user on the same device gets their own push
+            // target and none of the prior session's cached data.
+            authProvider.onSignedIn = pushMessaging.start;
+            authProvider.onSignedOut = () async {
+              await pushMessaging.stop();
+              await cacheStore.clear();
+            };
             return authProvider;
           },
         ),

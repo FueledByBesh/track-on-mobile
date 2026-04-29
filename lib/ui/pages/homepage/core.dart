@@ -18,7 +18,9 @@ import 'package:trackon_mobile/ui/sharedwidgets/profile_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/settings_page.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/user_avatar.dart';
 import 'package:trackon_mobile/data/models/user.dart';
+import 'package:trackon_mobile/data/providers/notification_provider.dart';
 import 'package:trackon_mobile/data/services/cache_store.dart';
+import 'package:trackon_mobile/data/services/push_messaging_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -260,11 +262,34 @@ class _HomeHeader extends StatefulWidget {
 
 class _HomeHeaderState extends State<_HomeHeader> {
   UserProfile? _me;
+  VoidCallback? _pushTickListener;
+
+  /// Cached so dispose() can reach the notifier without an ancestor
+  /// lookup on an already-deactivated context.
+  PushMessagingService? _pushService;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadMe());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadMe();
+      _refreshUnreadCount();
+      // A foreground-arrived push bumps PushMessagingService.foregroundTick.
+      // When it ticks, refresh the unread count so the bell badge
+      // reflects the new notification without requiring a page
+      // navigation or manual pull.
+      _pushService = context.read<PushMessagingService>();
+      _pushTickListener = () => _refreshUnreadCount();
+      _pushService!.foregroundTick.addListener(_pushTickListener!);
+    });
+  }
+
+  @override
+  void dispose() {
+    if (_pushTickListener != null && _pushService != null) {
+      _pushService!.foregroundTick.removeListener(_pushTickListener!);
+    }
+    super.dispose();
   }
 
   /// Pulls the last cached `user:me` row; no network. Fast enough that
@@ -278,6 +303,11 @@ class _HomeHeaderState extends State<_HomeHeader> {
     } catch (_) {
       // Silent fallback to the placeholder avatar.
     }
+  }
+
+  /// Cheap refresh — single-int endpoint, drives the bell-icon badge.
+  void _refreshUnreadCount() {
+    context.read<NotificationProvider>().refreshUnreadCount();
   }
 
   String get _greeting {
@@ -319,13 +349,50 @@ class _HomeHeaderState extends State<_HomeHeader> {
               ),
             ),
           ),
-          IconButton(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const NotificationsPage()),
-            ),
-            icon: const Icon(Icons.notifications_outlined),
-            color: iconColor,
+          // Bell icon + unread badge. Consumer so only this button
+          // rebuilds when the count changes; a red dot sits on the
+          // top-right of the icon when there's anything unread.
+          Consumer<NotificationProvider>(
+            builder: (context, notifications, _) {
+              final hasUnread = notifications.unreadCount > 0;
+              return IconButton(
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const NotificationsPage()),
+                  );
+                  // Returning to the home page — refresh the count so
+                  // the badge reflects any mark-as-read that happened
+                  // on the notifications page.
+                  if (mounted) _refreshUnreadCount();
+                },
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(Icons.notifications_outlined),
+                    if (hasUnread)
+                      Positioned(
+                        right: -2,
+                        top: -2,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: scheme.error,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: scheme.surface,
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                color: iconColor,
+              );
+            },
           ),
           // Dev-only debug tools — remove before release
           IconButton(

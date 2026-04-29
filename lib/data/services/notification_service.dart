@@ -11,6 +11,19 @@ class NotificationApiService {
     return (response.data as List).map((e) => AppNotification.fromJson(e)).toList();
   }
 
+  /// Incremental delta fetch — returns rows created at or after
+  /// [sinceIso]. Pair with the local cache to avoid redownloading the
+  /// entire list on every page open.
+  Future<List<AppNotification>> getSince(String sinceIso) async {
+    final response = await _api.dio.get(
+      '/api/notifications',
+      queryParameters: {'since': sinceIso},
+    );
+    return (response.data as List)
+        .map((e) => AppNotification.fromJson(e))
+        .toList();
+  }
+
   Future<List<AppNotification>> getUnread() async {
     final response = await _api.dio.get('/api/notifications/unread');
     return (response.data as List).map((e) => AppNotification.fromJson(e)).toList();

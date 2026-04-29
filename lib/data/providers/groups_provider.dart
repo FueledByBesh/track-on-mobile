@@ -83,16 +83,12 @@ class GroupsProvider extends ChangeNotifier {
   Future<Post> createClubPost({
     required String clubId,
     required String content,
-    String? imageUrl,
-    PostAttachmentKind? attachmentKind,
-    String? attachmentRefId,
+    List<PostAttachmentRequest> attachments = const [],
   }) async {
     final post = await _clubPosts.create(
       clubId: clubId,
       content: content,
-      imageUrl: imageUrl,
-      attachmentKind: attachmentKind,
-      attachmentRefId: attachmentRefId,
+      attachments: attachments,
     );
     await loadFeed();
     return post;
@@ -100,18 +96,30 @@ class GroupsProvider extends ChangeNotifier {
 
   Future<Post> createUserPost({
     required String content,
-    String? imageUrl,
-    PostAttachmentKind? attachmentKind,
-    String? attachmentRefId,
+    List<PostAttachmentRequest> attachments = const [],
   }) async {
     final post = await _userPosts.create(
       content: content,
-      imageUrl: imageUrl,
-      attachmentKind: attachmentKind,
-      attachmentRefId: attachmentRefId,
+      attachments: attachments,
     );
     await loadFeed();
     return post;
+  }
+
+  /// Delete a post. Routes to the right service based on `kind`. The
+  /// caller is also responsible for popping any open detail page on
+  /// success.
+  Future<void> deletePost(PostKind kind, String postId) async {
+    if (kind == PostKind.club) {
+      await _clubPosts.delete(postId);
+    } else {
+      await _userPosts.delete(postId);
+    }
+    // Drop the deleted row from the feed locally so the UI updates
+    // before the next loadFeed() round-trip.
+    _feed = _feed.where((p) => p.id != postId).toList();
+    notifyListeners();
+    await loadFeed();
   }
 
   /// Toggle the viewer's reaction. Swaps the updated post into `_feed`

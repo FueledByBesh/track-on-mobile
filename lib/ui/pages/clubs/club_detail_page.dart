@@ -6,6 +6,9 @@ import 'package:trackon_mobile/data/models/post.dart' as post_model;
 import 'package:trackon_mobile/data/providers/groups_provider.dart';
 import 'package:trackon_mobile/data/services/club_post_service.dart';
 import 'package:trackon_mobile/data/services/club_service.dart';
+import 'package:trackon_mobile/ui/pages/groups/create_post_page.dart';
+import 'package:trackon_mobile/ui/pages/groups/post_detail_page.dart';
+import 'package:trackon_mobile/ui/sharedwidgets/post_attachments_viewer.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/profile_page.dart';
 import 'club_notification_settings_page.dart';
 import 'club_settings_page.dart';
@@ -33,7 +36,7 @@ class _ClubDetailPageState extends State<ClubDetailPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     _load();
   }
 
@@ -192,7 +195,6 @@ class _ClubDetailPageState extends State<ClubDetailPage>
                 indicatorColor: scheme.primary,
                 tabs: const [
                   Tab(text: 'Posts'),
-                  Tab(text: 'Challenges'),
                   Tab(text: 'Members'),
                 ],
               ),
@@ -204,7 +206,6 @@ class _ClubDetailPageState extends State<ClubDetailPage>
           controller: _tabController,
           children: [
             _ClubPostsTab(club: club),
-            _ClubChallengesTab(club: club),
             _ClubMembersTab(club: club),
           ],
         ),
@@ -808,17 +809,65 @@ class _ClubPostsTab extends StatefulWidget {
 }
 
 class _ClubPostsTabState extends State<_ClubPostsTab> {
-  late Future<List<post_model.Post>> _future;
+  List<post_model.Post> _posts = const [];
+  Map<String, ClubRole> _rolesByUserId = const {};
+  bool _loading = true;
+  bool _failed = false;
 
   @override
   void initState() {
     super.initState();
-    _future = _loadPosts();
+    _load();
   }
 
-  Future<List<post_model.Post>> _loadPosts() {
-    if (!widget.club.canViewPosts) return Future.value(const []);
-    return context.read<ClubPostApiService>().getByClub(widget.club.id);
+  Future<void> _load({bool silent = false}) async {
+    if (!widget.club.canViewPosts) {
+      if (mounted) setState(() { _posts = const []; _loading = false; });
+      return;
+    }
+    if (!silent && mounted) setState(() => _loading = true);
+    try {
+      // Posts + member roles in parallel — roles are used to render
+      // a tag under each author's name in the post card.
+      final results = await Future.wait([
+        context.read<ClubPostApiService>().getByClub(widget.club.id),
+        context.read<ClubApiService>().getMembers(widget.club.id),
+      ]);
+      final fetched = results[0] as List<post_model.Post>;
+      final members = results[1] as List<ClubMember>;
+      final roleMap = {for (final m in members) m.userId: m.role};
+      if (mounted) {
+        setState(() {
+          _posts = fetched;
+          _rolesByUserId = roleMap;
+          _loading = false;
+          _failed = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() { _loading = false; _failed = true; });
+    }
+  }
+
+  Future<void> _openComposer() async {
+    final refreshed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreatePostPage(
+          preselectedClubId: widget.club.id,
+          preselectedClubName: widget.club.name,
+        ),
+      ),
+    );
+    if (refreshed == true) _load(silent: true);
+  }
+
+  Future<void> _openPost(post_model.Post post) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PostDetailPage(post: post)),
+    );
+    _load(silent: true);
   }
 
   @override
@@ -833,99 +882,82 @@ class _ClubPostsTabState extends State<_ClubPostsTab> {
     }
     final scheme = Theme.of(context).colorScheme;
 
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_failed) {
+      return Center(
+        child: Text('Could not load posts',
+            style: TextStyle(color: scheme.onSurfaceVariant)),
+      );
+    }
+
     return RefreshIndicator(
-      onRefresh: () async {
-        setState(() => _future = _loadPosts());
-        await _future;
-      },
-      child: FutureBuilder<List<post_model.Post>>(
-        future: _future,
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snap.hasError) {
-            return Center(
-              child: Text('Could not load posts',
-                  style: TextStyle(color: scheme.onSurfaceVariant)),
-            );
-          }
-          final posts = snap.data ?? const [];
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              if (club.isMember) ...[
-                _PostComposer(clubName: club.name),
-                const SizedBox(height: 16),
-              ],
-              ...posts.map((p) => _ClubPostCard(post: p)),
-              if (posts.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 48),
-                  child: Center(
-                    child: Column(
-                      children: [
-                        Icon(Icons.forum_outlined,
-                            size: 40, color: scheme.onSurfaceVariant),
-                        const SizedBox(height: 8),
-                        Text('No posts yet',
-                            style: TextStyle(color: scheme.onSurfaceVariant)),
-                      ],
+      onRefresh: () => _load(silent: true),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        children: [
+          if (club.isMember) _ComposeRow(onTap: _openComposer),
+          if (_posts.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 48),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.forum_outlined,
+                        size: 48, color: scheme.onSurfaceVariant),
+                    const SizedBox(height: 12),
+                    Text(
+                      club.isMember
+                          ? 'No posts yet — be the first to share!'
+                          : 'No posts yet',
+                      style: TextStyle(color: scheme.onSurfaceVariant),
                     ),
-                  ),
+                  ],
                 ),
-            ],
-          );
-        },
+              ),
+            )
+          else
+            ..._posts.map((p) => _ClubPostCard(
+                  post: p,
+                  authorRole: _rolesByUserId[p.authorId],
+                  onChanged: () => _load(silent: true),
+                  onTap: () => _openPost(p),
+                )),
+        ],
       ),
     );
   }
 }
 
-class _PostComposer extends StatelessWidget {
-  final String clubName;
-  const _PostComposer({required this.clubName});
+class _ComposeRow extends StatelessWidget {
+  final VoidCallback onTap;
+  const _ComposeRow({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardTheme.color ?? scheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            backgroundColor: scheme.primary.withAlpha(30),
-            child: Icon(Icons.edit, color: scheme.primary, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: InkWell(
-              onTap: () {
-                // Compose flow TBD — hook into GroupsProvider.createClubPost
-                // once the composer UI is designed.
-              },
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text('Share to $clubName...',
-                    style: TextStyle(color: scheme.onSurfaceVariant)),
-              ),
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.edit_outlined, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Text(
+              "Share something with this club…",
+              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 14),
             ),
-          ),
-          IconButton(
-            icon: Icon(Icons.image_outlined, color: scheme.primary),
-            onPressed: () {},
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -933,7 +965,16 @@ class _PostComposer extends StatelessWidget {
 
 class _ClubPostCard extends StatelessWidget {
   final post_model.Post post;
-  const _ClubPostCard({required this.post});
+  final ClubRole? authorRole;
+  final VoidCallback? onChanged;
+  final VoidCallback onTap;
+
+  const _ClubPostCard({
+    required this.post,
+    required this.onTap,
+    this.authorRole,
+    this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -948,388 +989,247 @@ class _ClubPostCard extends StatelessWidget {
         : '?';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: cardColor,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              // Avatar + name row is tappable — opens the author's
-              // profile. The overflow button stays separate so it
-              // doesn't fight the tap target.
-              Expanded(
-                child: InkWell(
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) =>
-                            ProfilePage(userId: post.authorId)),
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                            color: scheme.primary.withAlpha(100),
-                            shape: BoxShape.circle),
-                        child: Center(
+          // Author row
+          InkWell(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => ProfilePage(userId: post.authorId)),
+            ),
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: scheme.primary.withAlpha(80),
+                      image: post.authorAvatarUrl != null &&
+                              post.authorAvatarUrl!.isNotEmpty
+                          ? DecorationImage(
+                              image: NetworkImage(post.authorAvatarUrl!),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                    ),
+                    child: post.authorAvatarUrl == null ||
+                            post.authorAvatarUrl!.isEmpty
+                        ? Center(
                             child: Text(initials,
                                 style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                    color: scheme.onSurface))),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(post.authorName,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleSmall
-                                    ?.copyWith(
-                                        fontWeight: FontWeight.w600)),
-                            Text(_relativeTime(post.createdAt),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                        color:
-                                            scheme.onSurfaceVariant)),
-                          ],
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                    color: scheme.primary)))
+                        : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          post.authorName,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w700),
                         ),
-                      ),
-                    ],
+                        if (authorRole != null) ...[
+                          const SizedBox(height: 2),
+                          _RoleTag(role: authorRole!),
+                        ],
+                      ],
+                    ),
                   ),
-                ),
+                  Text(_localDateTime(post.createdAt),
+                      style: TextStyle(
+                          fontSize: 12, color: scheme.onSurfaceVariant)),
+                ],
               ),
-              IconButton(
-                icon: Icon(Icons.more_horiz, color: scheme.onSurfaceVariant),
-                onPressed: () {},
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 8),
-          Text(post.content, style: Theme.of(context).textTheme.bodyMedium),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _LikeTap(post: post, isLike: true),
-              const SizedBox(width: 24),
-              _LikeTap(post: post, isLike: false),
-              const SizedBox(width: 24),
-              Icon(Icons.mode_comment_outlined,
-                  size: 20, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 4),
-              Text('${post.commentCount}',
-                  style: Theme.of(context).textTheme.bodySmall),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 
-  String _relativeTime(String iso) {
-    try {
-      final dt = DateTime.parse(iso).toLocal();
-      final diff = DateTime.now().difference(dt);
-      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-      if (diff.inHours < 24) return '${diff.inHours}h ago';
-      if (diff.inDays < 7) return '${diff.inDays}d ago';
-      return DateFormat('MMM d').format(dt);
-    } catch (_) {
-      return '';
-    }
-  }
-}
-
-class _LikeTap extends StatelessWidget {
-  final post_model.Post post;
-  final bool isLike;
-  const _LikeTap({required this.post, required this.isLike});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final active =
-        isLike ? post.userLiked == true : post.userLiked == false;
-    final count = isLike ? post.likes : post.dislikes;
-    return GestureDetector(
-      onTap: () => context
-          .read<GroupsProvider>()
-          .likePost(post.kind, post.id, isLike),
-      child: Row(children: [
-        Icon(
-          isLike
-              ? (active ? Icons.favorite : Icons.favorite_outline)
-              : (active ? Icons.thumb_down : Icons.thumb_down_outlined),
-          size: 20,
-          color: active
-              ? (isLike ? Colors.red : Colors.blue)
-              : scheme.onSurfaceVariant,
-        ),
-        const SizedBox(width: 4),
-        Text('$count', style: Theme.of(context).textTheme.bodySmall),
-      ]),
-    );
-  }
-}
-
-// ============ CHALLENGES TAB ============
-
-class _ClubChallengesTab extends StatefulWidget {
-  final Club club;
-  const _ClubChallengesTab({required this.club});
-
-  @override
-  State<_ClubChallengesTab> createState() => _ClubChallengesTabState();
-}
-
-class _ClubChallengesTabState extends State<_ClubChallengesTab> {
-  late Future<List<Challenge>> _future;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = _load();
-  }
-
-  Future<List<Challenge>> _load() {
-    if (!widget.club.canViewChallenges) return Future.value(const []);
-    return context
-        .read<ClubApiService>()
-        .getActiveChallenges(widget.club.id);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final club = widget.club;
-    if (!club.canViewChallenges) {
-      return const _LockedSection(
-        icon: Icons.emoji_events_outlined,
-        label: 'Challenges are private',
-        detail: 'Join this club to see and compete in its challenges.',
-      );
-    }
-    final scheme = Theme.of(context).colorScheme;
-
-    return FutureBuilder<List<Challenge>>(
-      future: _future,
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snap.hasError) {
-          return Center(
-              child: Text('Could not load challenges',
-                  style: TextStyle(color: scheme.onSurfaceVariant)));
-        }
-        final challenges = snap.data ?? const [];
-        if (challenges.isEmpty) {
-          return Center(
+          // Content + attachments — tap to open detail.
+          InkWell(
+            onTap: onTap,
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.emoji_events_outlined,
-                    size: 48, color: scheme.onSurfaceVariant),
-                const SizedBox(height: 12),
-                Text('No challenges yet',
-                    style: TextStyle(color: scheme.onSurfaceVariant)),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                  child: Text(
+                    post.content,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(height: 1.45),
+                  ),
+                ),
+                if (post.attachments.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+                    child: PostAttachmentsViewer(
+                        attachments: post.attachments),
+                  ),
               ],
             ),
-          );
-        }
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: challenges.length,
-          itemBuilder: (context, i) =>
-              _ChallengeCard(challenge: challenges[i]),
-        );
-      },
-    );
-  }
-}
-
-class _ChallengeCard extends StatelessWidget {
-  final Challenge challenge;
-  const _ChallengeCard({required this.challenge});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
-    final progress = challenge.userProgress != null
-        ? (challenge.userProgress! / challenge.targetValue).clamp(0.0, 1.0)
-        : 0.0;
-    final isComplete = progress >= 1.0;
-    final unit = challenge.targetType == 'STEPS' ? 'steps' : 'km';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: challenge.isSubscribed
-              ? scheme.primary.withAlpha(80)
-              : scheme.outlineVariant,
-          width: challenge.isSubscribed ? 1.5 : 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: scheme.primary.withAlpha(30),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  challenge.targetType,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: scheme.primary,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              Text(
-                _dateRange(challenge.startDate, challenge.endDate),
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-            ],
           ),
-          const SizedBox(height: 10),
-          Text(
-            challenge.title,
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          if (challenge.description != null) ...[
-            const SizedBox(height: 4),
-            Text(challenge.description!,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: scheme.onSurfaceVariant)),
-          ],
-          const SizedBox(height: 12),
-          if (challenge.isSubscribed) ...[
-            Row(
+
+          Divider(height: 1, color: scheme.outlineVariant),
+
+          // Action bar
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
               children: [
-                Text(
-                  '${_formatValue(challenge.userProgress ?? 0)} / ${_formatValue(challenge.targetValue)} $unit',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onSurface),
+                _ClubActionBtn(
+                  icon: post.userLiked == true
+                      ? Icons.thumb_up_rounded
+                      : Icons.thumb_up_outlined,
+                  label: '${post.likes}',
+                  active: post.userLiked == true,
+                  onTap: () async {
+                    await context
+                        .read<GroupsProvider>()
+                        .likePost(post.kind, post.id, true);
+                    onChanged?.call();
+                  },
                 ),
-                const Spacer(),
-                Text(
-                  '${(progress * 100).round()}%',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: isComplete ? Colors.green : scheme.primary,
-                    fontSize: 13,
-                  ),
+                _ClubActionBtn(
+                  icon: post.userLiked == false
+                      ? Icons.thumb_down_rounded
+                      : Icons.thumb_down_outlined,
+                  label: '${post.dislikes}',
+                  active: post.userLiked == false,
+                  onTap: () async {
+                    await context
+                        .read<GroupsProvider>()
+                        .likePost(post.kind, post.id, false);
+                    onChanged?.call();
+                  },
+                ),
+                _ClubActionBtn(
+                  icon: Icons.mode_comment_outlined,
+                  label: '${post.commentCount}',
+                  active: false,
+                  onTap: onTap,
                 ),
               ],
             ),
-            const SizedBox(height: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 8,
-                backgroundColor: scheme.surfaceContainerHighest,
-                valueColor: AlwaysStoppedAnimation(
-                    isComplete ? Colors.green : scheme.primary),
-              ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Icon(Icons.people_outline,
-                  size: 16, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 4),
-              Text('${challenge.subscriberCount} joined',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: scheme.onSurfaceVariant)),
-              const Spacer(),
-              if (challenge.isSubscribed)
-                OutlinedButton(
-                  onPressed: () {
-                    context
-                        .read<ClubApiService>()
-                        .unsubscribeChallenge(challenge.id);
-                  },
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: scheme.onSurfaceVariant,
-                    side: BorderSide(color: scheme.outlineVariant),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                  child: const Text('Leave'),
-                )
-              else
-                ElevatedButton(
-                  onPressed: () {
-                    context
-                        .read<ClubApiService>()
-                        .subscribeChallenge(challenge.id);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: scheme.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                  child: const Text('Join'),
-                ),
-            ],
           ),
         ],
       ),
     );
   }
+}
 
-  String _dateRange(String start, String end) {
-    try {
-      final s = DateFormat('MMM d').format(DateTime.parse(start));
-      final e = DateFormat('MMM d').format(DateTime.parse(end));
-      return '$s – $e';
-    } catch (_) {
-      return '';
-    }
+class _RoleTag extends StatelessWidget {
+  final ClubRole role;
+  const _RoleTag({required this.role});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (bg, fg, label) = switch (role) {
+      ClubRole.owner =>
+        (Colors.amber.withAlpha(40), Colors.amber.shade800, 'OWNER'),
+      ClubRole.admin =>
+        (scheme.primary.withAlpha(30), scheme.primary, 'ADMIN'),
+      ClubRole.member => (
+          scheme.surfaceContainerHighest,
+          scheme.onSurfaceVariant,
+          'MEMBER'
+        ),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          color: fg,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
   }
+}
 
-  String _formatValue(double v) {
-    if (v >= 1000) return NumberFormat('#,###').format(v);
-    return v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 1);
+class _ClubActionBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool active;
+  final VoidCallback? onTap;
+
+  const _ClubActionBtn({
+    required this.icon,
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon,
+                size: 22,
+                color:
+                    active ? scheme.primary : scheme.onSurfaceVariant),
+            const SizedBox(width: 6),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurfaceVariant)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Local date + time, e.g. "28 Apr · 14:32" (current year) or
+/// "12 Mar 2024 · 14:32" (prior years).
+String _localDateTime(String iso) {
+  try {
+    final dt = DateTime.parse(iso).toLocal();
+    final now = DateTime.now();
+    const months = [
+      'Jan','Feb','Mar','Apr','May','Jun',
+      'Jul','Aug','Sep','Oct','Nov','Dec'
+    ];
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final mm = dt.minute.toString().padLeft(2, '0');
+    if (dt.year == now.year) {
+      return '${dt.day} ${months[dt.month - 1]} · $hh:$mm';
+    }
+    return '${dt.day} ${months[dt.month - 1]} ${dt.year} · $hh:$mm';
+  } catch (_) {
+    return '';
   }
 }
 
@@ -1406,14 +1306,33 @@ class _ClubMembersTabState extends State<_ClubMembersTab> {
                 ),
                 child: Row(
                   children: [
-                    CircleAvatar(
-                      backgroundColor: scheme.primary.withAlpha(30),
-                      child: Text(
-                        m.name.isNotEmpty ? m.name[0] : '?',
-                        style: TextStyle(
-                            color: scheme.primary,
-                            fontWeight: FontWeight.w600),
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: scheme.primary.withAlpha(40),
+                        image: m.avatarImageUrl != null &&
+                                m.avatarImageUrl!.isNotEmpty
+                            ? DecorationImage(
+                                image: NetworkImage(m.avatarImageUrl!),
+                                fit: BoxFit.cover,
+                              )
+                            : null,
                       ),
+                      child: m.avatarImageUrl == null ||
+                              m.avatarImageUrl!.isEmpty
+                          ? Center(
+                              child: Text(
+                                m.name.isNotEmpty
+                                    ? m.name[0].toUpperCase()
+                                    : '?',
+                                style: TextStyle(
+                                    color: scheme.primary,
+                                    fontWeight: FontWeight.w700),
+                              ),
+                            )
+                          : null,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
