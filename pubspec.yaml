@@ -64,6 +64,56 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+  # Generates platform-specific launcher icons from a single source PNG.
+  # Run via: `dart run flutter_launcher_icons` after editing the config below.
+  flutter_launcher_icons: ^0.14.4
+
+  # Generates the splash screen / "app start" image. Handles both the
+  # legacy launch theme (Android 5-11 + iOS) AND the Android 12+
+  # system splash screen API. Run via:
+  #   `dart run flutter_native_splash:create`
+  flutter_native_splash: ^2.4.4
+
+# ===== App icon generator =====
+# Source: assets/icon/app_icon.png (1024x1024, no transparency for iOS).
+# For Android adaptive icons (8.0+), provide a separate foreground PNG that
+# fits centered within ~66% of the canvas (OEMs crop differently).
+flutter_launcher_icons:
+  image_path: "assets/icon/app_icon.png"
+  android: "ic_launcher"
+  ios: true
+  remove_alpha_ios: true
+  min_sdk_android: 21
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon/app_icon_fg.png"
+
+# ===== Splash screen generator =====
+# The splash icon reuses the launcher icon (assets/icon/app_icon.png)
+# so we maintain only one source for the app's primary mark. The
+# branding strip at the bottom is splash-specific.
+flutter_native_splash:
+  color: "#FFFFFF"
+  color_dark: "#000000"
+
+  # Legacy splash (Android 5-11 + iOS) — uses the launcher icon.
+  image: "assets/icon/app_icon.png"
+  image_dark: "assets/icon/app_icon.png"
+
+  # Android 12+ system splash screen.
+  # `image` is OS-cropped to a ~240dp circle in the center; `branding`
+  # sits uncropped at the bottom of the screen.
+  android_12:
+    image: "assets/icon/app_icon.png"
+    color: "#FFFFFF"
+    image_dark: "assets/icon/app_icon.png"
+    color_dark: "#000000"
+    branding: "assets/splash/splash_branding.png"
+    branding_dark: "assets/splash/splash_branding.png"
+
+  android: true
+  ios: true
+  web: false
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
@@ -76,6 +126,7 @@ flutter:
 
   assets:
     - .env
+    - assets/icon/app_icon.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:
