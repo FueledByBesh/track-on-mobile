@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../api_client.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AuthProvider extends ChangeNotifier {
   final ApiClient _api;
@@ -19,9 +20,8 @@ class AuthProvider extends ChangeNotifier {
   // Google OAuth configuration
   static const String _googleAuthUrl =
       'https://accounts.google.com/o/oauth2/v2/auth';
-  static const String _googleClientId =
-      '120620645123-siv1rdhmjvfqf30qest8cokvaj2794rl.apps.googleusercontent.com';
-  static const String _redirectUri = '${ApiClient.baseUrl}/auth/callback';
+  final String _googleClientId = '${dotenv.env['OAUTH_CLIENT_ID']}';
+  final String _redirectUri = '${dotenv.env['API_BASE_URL']}/auth/callback';
   static const String _scopes = 'openid profile email';
 
   AuthProvider(this._api);

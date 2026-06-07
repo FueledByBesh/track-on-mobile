@@ -3,9 +3,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'providers/connectivity_provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ApiClient {
-  static const String baseUrl = 'http://track-on.duckdns.org:8080';
+  final String baseUrl = '${dotenv.env['API_BASE_URL']}';
   static const String _accessTokenKey = 'access_token';
   static const String _refreshTokenKey = 'refresh_token';
   static const _storage = FlutterSecureStorage();
