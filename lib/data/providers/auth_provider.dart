@@ -183,7 +183,7 @@ class AuthProvider extends ChangeNotifier {
     // Use a separate Dio to avoid auth interceptor (these are unauthenticated requests)
     final pollDio = Dio(
       BaseOptions(
-        baseUrl: ApiClient.baseUrl,
+        baseUrl: _api.baseUrl,
         connectTimeout: const Duration(seconds: 5),
         receiveTimeout: const Duration(seconds: 5),
       ),

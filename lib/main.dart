@@ -69,7 +69,7 @@ Future<void> main() async {
   MapboxOptions.setAccessToken(mapboxToken);
 
   final apiClient = ApiClient();
-  final connectivityProvider = ConnectivityProvider();
+  final connectivityProvider = ConnectivityProvider(apiClient);
 
   // Wire connectivity to ApiClient so it can short-circuit requests when offline
   apiClient.connectivityProvider = connectivityProvider;

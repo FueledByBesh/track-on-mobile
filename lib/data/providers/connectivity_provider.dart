@@ -4,13 +4,12 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import '../api_client.dart';
 
-enum OfflineReason {
-  none,
-  noConnection,
-  serverUnreachable,
-}
+enum OfflineReason { none, noConnection, serverUnreachable }
 
 class ConnectivityProvider extends ChangeNotifier {
+  final ApiClient _apiClient;
+  ConnectivityProvider(this._apiClient);
+
   final Connectivity _connectivity = Connectivity();
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   Timer? _healthPollTimer;
@@ -21,11 +20,13 @@ class ConnectivityProvider extends ChangeNotifier {
   bool _isChecking = false;
 
   // Separate Dio for health checks (no auth interceptor)
-  final Dio _healthDio = Dio(BaseOptions(
-    baseUrl: ApiClient.baseUrl,
-    connectTimeout: const Duration(seconds: 5),
-    receiveTimeout: const Duration(seconds: 5),
-  ));
+  late final Dio _healthDio = Dio(
+    BaseOptions(
+      baseUrl: _apiClient.baseUrl,
+      connectTimeout: const Duration(seconds: 5),
+      receiveTimeout: const Duration(seconds: 5),
+    ),
+  );
 
   bool get isOnline => _isOnline;
   bool get hasNetwork => _hasNetwork;
@@ -45,7 +46,9 @@ class ConnectivityProvider extends ChangeNotifier {
 
   void start() {
     // Listen to connectivity changes
-    _connectivitySub = _connectivity.onConnectivityChanged.listen(_onConnectivityChanged);
+    _connectivitySub = _connectivity.onConnectivityChanged.listen(
+      _onConnectivityChanged,
+    );
     // Check initial state
     _connectivity.checkConnectivity().then(_onConnectivityChanged);
   }
@@ -71,7 +74,11 @@ class ConnectivityProvider extends ChangeNotifier {
   /// Called when a Dio API request fails with a connection error.
   void reportConnectionError() {
     if (_isOnline) {
-      _setOffline(_hasNetwork ? OfflineReason.serverUnreachable : OfflineReason.noConnection);
+      _setOffline(
+        _hasNetwork
+            ? OfflineReason.serverUnreachable
+            : OfflineReason.noConnection,
+      );
       if (_hasNetwork) {
         _startHealthPolling();
       }
