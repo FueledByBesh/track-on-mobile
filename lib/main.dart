@@ -37,6 +37,7 @@ import 'data/services/storage_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'ui/myapp.dart';
 
@@ -67,6 +68,17 @@ Future<void> main() async {
   // Initialize MapBox with the public access token
   final mapboxToken = dotenv.env['MAPBOX_PUBLIC_TOKEN'] ?? '';
   MapboxOptions.setAccessToken(mapboxToken);
+
+  // Initialize Google Sign-In once at startup. serverClientId is the WEB
+  // OAuth client ID — passing it here makes Google set it as the ID
+  // token's `aud` claim, which is what the backend verifier expects.
+  try {
+    await GoogleSignIn.instance.initialize(
+      serverClientId: dotenv.env['GOOGLE_WEB_CLIENT_ID'],
+    );
+  } catch (e) {
+    Logger.w('APP', 'GoogleSignIn init failed: $e');
+  }
 
   final apiClient = ApiClient();
   final connectivityProvider = ConnectivityProvider(apiClient);

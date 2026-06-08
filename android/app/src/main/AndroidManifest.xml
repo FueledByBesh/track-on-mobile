@@ -30,13 +30,6 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Deep link: trackon://auth?authenticated=true -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-                <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="trackon" android:host="auth"/>
-            </intent-filter>
         </activity>
         <!-- Health Connect permission rationale activity (required by health package) -->
         <activity-alias

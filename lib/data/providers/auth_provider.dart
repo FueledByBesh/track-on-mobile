@@ -1,10 +1,8 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:dio/dio.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../api_client.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../services/logger_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final ApiClient _api;
@@ -16,13 +14,6 @@ class AuthProvider extends ChangeNotifier {
   /// signed out or never had a session. Consumed by AuthWrapper to decide
   /// whether to show a "session expired" SnackBar.
   bool _showExpiredMessage = false;
-
-  // Google OAuth configuration
-  static const String _googleAuthUrl =
-      'https://accounts.google.com/o/oauth2/v2/auth';
-  final String _googleClientId = '${dotenv.env['OAUTH_CLIENT_ID']}';
-  final String _redirectUri = '${dotenv.env['API_BASE_URL']}/auth/callback';
-  static const String _scopes = 'openid profile email';
 
   AuthProvider(this._api);
 
@@ -118,48 +109,46 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Start the Google OAuth flow:
-  /// 1. Generate random state
-  /// 2. Open Google consent in browser (redirect_uri → backend)
-  /// 3. Poll backend for tokens using state
+  /// Native Google Sign-In:
+  ///   1. Authenticate via Play Services (in-app account picker)
+  ///   2. POST the resulting ID token to /auth/google
+  ///   3. Save the returned app access + refresh token pair
+  ///
+  /// Returns true on success. Returns false (and logs) on any failure —
+  /// the caller flips UI state based on _isLoggedIn, which won't change
+  /// unless step 3 completes.
   Future<bool> signInWithGoogle() async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      // 1. Generate cryptographically random state
-      final state = _generateState();
+      Logger.i('AUTH', 'Calling GoogleSignIn.authenticate()');
+      final account = await GoogleSignIn.instance.authenticate();
+      Logger.i('AUTH', 'authenticate() returned: email=${account.email}');
 
-      // 2. Construct Google OAuth URL
-      final authUrl = Uri.parse(_googleAuthUrl).replace(
-        queryParameters: {
-          'client_id': _googleClientId,
-          'redirect_uri': _redirectUri,
-          'scope': _scopes,
-          'response_type': 'code',
-          'state': state,
-          'access_type': 'offline',
-          'prompt': 'consent',
-        },
-      );
+      final idToken = account.authentication.idToken;
+      Logger.i('AUTH', 'idToken present=${idToken != null} length=${idToken?.length ?? 0}');
 
-      // 3. Open in external browser
-      final launched = await launchUrl(
-        authUrl,
-        mode: LaunchMode.externalApplication,
-      );
-      if (!launched) {
+      if (idToken == null || idToken.isEmpty) {
+        Logger.w('AUTH', 'No ID token returned — check serverClientId is a WEB client ID and SHA-1 is registered');
         _isLoading = false;
         notifyListeners();
         return false;
       }
 
-      // 4. Poll backend for tokens (every 1.5 seconds, max 5 minutes)
-      final tokens = await _pollForTokens(state);
-      if (tokens != null) {
+      Logger.i('AUTH', 'POST /auth/google');
+      final response = await _api.dio.post(
+        '/auth/google',
+        data: {'id_token': idToken},
+      );
+      Logger.i('AUTH', 'Backend responded ${response.statusCode}');
+
+      if (response.statusCode == 200 &&
+          response.data is Map &&
+          response.data['access_token'] != null) {
         await ApiClient.saveTokens(
-          tokens['access_token']!,
-          tokens['refresh_token']!,
+          response.data['access_token'] as String,
+          response.data['refresh_token'] as String,
         );
         _isLoggedIn = true;
         _isLoading = false;
@@ -167,49 +156,17 @@ class AuthProvider extends ChangeNotifier {
         unawaited(_invokeSignedInHook());
         return true;
       }
-    } catch (e) {
-      debugPrint('Sign in error: $e');
+      Logger.w('AUTH', 'Unexpected response shape: ${response.data}');
+    } on GoogleSignInException catch (e) {
+      Logger.w('AUTH', 'GoogleSignInException: code=${e.code} desc=${e.description}');
+    } catch (e, st) {
+      Logger.e('AUTH', 'Sign in error: $e', e, st);
     }
 
     _isLoggedIn = false;
     _isLoading = false;
     notifyListeners();
     return false;
-  }
-
-  /// Poll GET /auth/token?state=STATE every 1.5 seconds.
-  /// Returns null if timeout (5 minutes).
-  Future<Map<String, String>?> _pollForTokens(String state) async {
-    // Use a separate Dio to avoid auth interceptor (these are unauthenticated requests)
-    final pollDio = Dio(
-      BaseOptions(
-        baseUrl: _api.baseUrl,
-        connectTimeout: const Duration(seconds: 5),
-        receiveTimeout: const Duration(seconds: 5),
-      ),
-    );
-
-    const maxAttempts = 200; // 200 * 1.5s = 5 minutes
-    for (int i = 0; i < maxAttempts; i++) {
-      await Future.delayed(const Duration(milliseconds: 1500));
-      try {
-        final response = await pollDio.get(
-          '/auth/token',
-          queryParameters: {'state': state},
-        );
-        if (response.statusCode == 200 &&
-            response.data['access_token'] != null) {
-          return {
-            'access_token': response.data['access_token'] as String,
-            'refresh_token': response.data['refresh_token'] as String,
-          };
-        }
-        // 202 = still pending, continue polling
-      } catch (_) {
-        // Network error or other, continue polling
-      }
-    }
-    return null; // Timeout
   }
 
   Future<void> signOut() async {
@@ -219,7 +176,16 @@ class AuthProvider extends ChangeNotifier {
     // runs those requests would 401.
     await _invokeSignedOutHook();
 
-    // Best-effort backend cleanup: revoke Google tokens + clear DB rows.
+    // Clear the cached Google account so the next signIn shows the
+    // picker again (otherwise Play Services silently reuses the last
+    // account). Best-effort — failures here shouldn't block logout.
+    try {
+      await GoogleSignIn.instance.signOut();
+    } catch (e) {
+      debugPrint('GoogleSignIn.signOut failed: $e');
+    }
+
+    // Best-effort backend cleanup: clear DB refresh token rows.
     // If we're offline or the backend is down, just clear local state —
     // the user tapped "sign out" and they expect to be logged out.
     try {
@@ -230,12 +196,5 @@ class AuthProvider extends ChangeNotifier {
     await ApiClient.clearTokens();
     _isLoggedIn = false;
     notifyListeners();
-  }
-
-  String _generateState() {
-    // Cryptographically secure random state (UUID v4-like)
-    final rng = Random.secure();
-    final bytes = List.generate(16, (_) => rng.nextInt(256));
-    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   }
 }
