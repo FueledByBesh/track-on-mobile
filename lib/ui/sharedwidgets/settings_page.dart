@@ -78,14 +78,7 @@ class _GeneralTab extends StatefulWidget {
 }
 
 class _GeneralTabState extends State<_GeneralTab> {
-  String _units = 'Metric (km)';
-  bool _autoSync = true;
-  bool _weeklyReport = true;
-
-  // ----- server-backed settings -----
-  // Loaded once on init and patched per-toggle. Kept separately from
-  // the ephemeral units/auto-sync flags above which aren't wired to
-  // any backend yet.
+  // Server-backed settings: loaded once on init and patched per-toggle.
   UserSettings? _serverSettings;
   bool _savingSetting = false;
 
@@ -254,29 +247,6 @@ class _GeneralTabState extends State<_GeneralTab> {
             ),
           ),
         ],
-        const SizedBox(height: 24),
-        _SectionHeader(title: 'Preferences'),
-        _SettingsTileDropdown(
-          icon: Icons.straighten,
-          title: 'Units',
-          value: _units,
-          options: const ['Metric (km)', 'Imperial (mi)'],
-          onChanged: (v) => setState(() => _units = v),
-        ),
-        _SettingsTileSwitch(
-          icon: Icons.sync,
-          title: 'Auto Sync',
-          subtitle: 'Sync workouts automatically',
-          value: _autoSync,
-          onChanged: (v) => setState(() => _autoSync = v),
-        ),
-        _SettingsTileSwitch(
-          icon: Icons.insert_chart_outlined,
-          title: 'Weekly Report',
-          subtitle: 'Receive weekly summary',
-          value: _weeklyReport,
-          onChanged: (v) => setState(() => _weeklyReport = v),
-        ),
         const SizedBox(height: 24),
         _SectionHeader(title: 'Data'),
         _SettingsTile(
@@ -960,54 +930,3 @@ class _SettingsTileSwitch extends StatelessWidget {
   }
 }
 
-class _SettingsTileDropdown extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String value;
-  final List<String> options;
-  final ValueChanged<String> onChanged;
-
-  const _SettingsTileDropdown({
-    required this.icon,
-    required this.title,
-    required this.value,
-    required this.options,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: scheme.outlineVariant.withAlpha(80)),
-      ),
-      child: ListTile(
-        leading: Icon(icon, color: scheme.primary),
-        title: Text(
-          title,
-          style: TextStyle(fontWeight: FontWeight.w500, color: scheme.onSurface),
-        ),
-        trailing: DropdownButton<String>(
-          value: value,
-          underline: const SizedBox(),
-          dropdownColor: cardColor,
-          items: options
-              .map((o) => DropdownMenuItem(
-                    value: o,
-                    child: Text(o, style: TextStyle(fontSize: 14, color: scheme.onSurface)),
-                  ))
-              .toList(),
-          onChanged: (v) {
-            if (v != null) onChanged(v);
-          },
-        ),
-      ),
-    );
-  }
-}
