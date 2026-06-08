@@ -148,7 +148,7 @@ Future<void> main() async {
         ChangeNotifierProvider(
           create: (_) {
             final stepApi = StepApiService(apiClient);
-            return StepsProvider(stepApi, StepSyncService(stepApi, apiClient));
+            return StepsProvider(StepSyncService(stepApi, apiClient));
           },
         ),
         ChangeNotifierProvider(

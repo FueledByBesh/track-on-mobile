@@ -39,11 +39,4 @@ class StepApiService {
         .toList();
   }
 
-  Future<DailySteps> updateGoal(int goal) async {
-    final response = await _api.dio.put(
-      '/api/steps/goal',
-      data: {'goal': goal},
-    );
-    return DailySteps.fromJson(response.data);
-  }
 }

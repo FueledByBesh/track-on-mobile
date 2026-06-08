@@ -2,11 +2,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/daily_steps.dart';
-import '../services/step_service.dart';
 import '../services/step_sync_service.dart';
 
 class StepsProvider extends ChangeNotifier {
-  final StepApiService _apiService;
   final StepSyncService _syncService;
 
   static const String _cacheKey = 'steps_7day_cache';
@@ -19,7 +17,7 @@ class StepsProvider extends ChangeNotifier {
   bool _cacheLoaded = false;
   bool _isSyncing = false;
 
-  StepsProvider(this._apiService, this._syncService);
+  StepsProvider(this._syncService);
 
   DailySteps get today => _today;
   List<DailySteps> get history => _history;
@@ -57,15 +55,6 @@ class StepsProvider extends ChangeNotifier {
     await _syncAndCache(isOnline: isOnline);
     _isSyncing = false;
     notifyListeners();
-  }
-
-  Future<void> updateGoal(int goal) async {
-    try {
-      _today = await _apiService.updateGoal(goal);
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Error updating goal: $e');
-    }
   }
 
   // ============ CACHE ============

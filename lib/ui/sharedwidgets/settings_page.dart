@@ -4,6 +4,7 @@ import 'package:trackon_mobile/data/models/user_settings.dart';
 import 'package:trackon_mobile/data/providers/auth_provider.dart';
 import 'package:trackon_mobile/data/providers/permission_provider.dart';
 import 'package:trackon_mobile/data/providers/theme_provider.dart';
+import 'package:trackon_mobile/data/services/logger_service.dart';
 import 'package:trackon_mobile/data/services/permission_service.dart';
 import 'package:trackon_mobile/data/services/user_service.dart';
 import 'package:trackon_mobile/ui/sharedwidgets/edit_profile_page.dart';
@@ -24,7 +25,7 @@ class _SettingsPageState extends State<SettingsPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -51,6 +52,7 @@ class _SettingsPageState extends State<SettingsPage>
           tabAlignment: TabAlignment.start,
           tabs: const [
             Tab(text: 'General'),
+            Tab(text: 'Activity'),
             Tab(text: 'Appearance'),
             Tab(text: 'Permissions'),
             Tab(text: 'About'),
@@ -61,6 +63,7 @@ class _SettingsPageState extends State<SettingsPage>
         controller: _tabController,
         children: const [
           _GeneralTab(),
+          _ActivityTab(),
           _AppearanceTab(),
           _PermissionsTab(),
           _AboutTab(),
@@ -81,6 +84,12 @@ class _GeneralTabState extends State<_GeneralTab> {
   // Server-backed settings: loaded once on init and patched per-toggle.
   UserSettings? _serverSettings;
   bool _savingSetting = false;
+  // Distinguishes "still loading" from "loaded successfully" from "load
+  // failed" — without this the Privacy / Notifications sections would
+  // either silently disappear (on failure) or pop in late (on success),
+  // both of which look like UI bugs.
+  bool _loadingSettings = true;
+  bool _loadFailed = false;
 
   @override
   void initState() {
@@ -89,12 +98,25 @@ class _GeneralTabState extends State<_GeneralTab> {
   }
 
   Future<void> _loadServerSettings() async {
+    setState(() {
+      _loadingSettings = true;
+      _loadFailed = false;
+    });
     try {
       final s = await context.read<UserApiService>().getMySettings();
       if (!mounted) return;
-      setState(() => _serverSettings = s);
-    } catch (_) {
-      // Non-fatal — privacy section just won't render until a retry.
+      setState(() {
+        _serverSettings = s;
+        _loadingSettings = false;
+        _loadFailed = false;
+      });
+    } catch (e) {
+      Logger.w('SETTINGS', 'Failed to load user settings: $e');
+      if (!mounted) return;
+      setState(() {
+        _loadingSettings = false;
+        _loadFailed = true;
+      });
     }
   }
 
@@ -173,7 +195,27 @@ class _GeneralTabState extends State<_GeneralTab> {
           subtitle: 'Update your password',
           onTap: () {},
         ),
-        if (_serverSettings != null) ...[
+        if (_loadingSettings) ...[
+          const SizedBox(height: 24),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
+        ] else if (_loadFailed) ...[
+          const SizedBox(height: 24),
+          _SettingsTile(
+            icon: Icons.refresh,
+            title: 'Couldn\'t load privacy & notification settings',
+            subtitle: 'Tap to retry',
+            onTap: _loadServerSettings,
+          ),
+        ] else if (_serverSettings != null) ...[
           const SizedBox(height: 24),
           _SectionHeader(title: 'Privacy'),
           // AbsorbPointer keeps the section inert while a PATCH is in
@@ -275,6 +317,192 @@ class _GeneralTabState extends State<_GeneralTab> {
           isDestructive: true,
         ),
       ],
+    );
+  }
+}
+
+/// Activity tab — server-backed activity / fitness preferences.
+/// Currently holds just a Goals section (daily step goal); will grow to
+/// include auto-pause, audio cues, default sport, weekly distance, etc.
+/// as those features ship.
+class _ActivityTab extends StatefulWidget {
+  const _ActivityTab();
+
+  @override
+  State<_ActivityTab> createState() => _ActivityTabState();
+}
+
+class _ActivityTabState extends State<_ActivityTab> {
+  UserSettings? _settings;
+  bool _loading = true;
+  bool _loadFailed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _loadFailed = false;
+    });
+    try {
+      final s = await context.read<UserApiService>().getMySettings();
+      if (!mounted) return;
+      setState(() {
+        _settings = s;
+        _loading = false;
+      });
+    } catch (e) {
+      Logger.w('SETTINGS', 'Failed to load user settings: $e');
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadFailed = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    if (_loadFailed || _settings == null) {
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _SettingsTile(
+            icon: Icons.refresh,
+            title: 'Couldn\'t load goals',
+            subtitle: 'Tap to retry',
+            onTap: _load,
+          ),
+        ],
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _SectionHeader(title: 'Goals'),
+        _StepGoalTile(
+          value: _settings!.defaultStepGoal,
+          onChanged: (next) async {
+            final previous = _settings!;
+            // Capture the messenger before the await so the linter is
+            // happy about cross-async context use and the snack works
+            // even if the widget is disposed mid-flight.
+            final messenger = ScaffoldMessenger.of(context);
+            final users = context.read<UserApiService>();
+            setState(
+              () => _settings = previous.copyWith(defaultStepGoal: next),
+            );
+            try {
+              final updated = await users.updateMySettings(
+                UserSettings.patch(defaultStepGoal: next),
+              );
+              if (!mounted) return;
+              setState(() => _settings = updated);
+            } catch (e) {
+              Logger.w('SETTINGS', 'Failed to save step goal: $e');
+              if (mounted) setState(() => _settings = previous);
+              messenger.showSnackBar(
+                const SnackBar(content: Text('Could not save change')),
+              );
+            }
+          },
+        ),
+      ],
+    );
+  }
+}
+
+/// Step-goal tile with a tap-to-edit dialog. We use a dialog rather than
+/// an inline slider because typical goals span 1k–30k — slider precision
+/// in that range is awkward.
+class _StepGoalTile extends StatelessWidget {
+  final int value;
+  final ValueChanged<int> onChanged;
+  const _StepGoalTile({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = Theme.of(context).cardTheme.color ?? scheme.surface;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant.withAlpha(80)),
+      ),
+      child: ListTile(
+        leading: Icon(Icons.directions_walk, color: scheme.primary),
+        title: Text(
+          'Daily step goal',
+          style:
+              TextStyle(fontWeight: FontWeight.w500, color: scheme.onSurface),
+        ),
+        subtitle: Text(
+          '$value steps',
+          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+        ),
+        trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+        onTap: () async {
+          final next = await _showEditDialog(context, value);
+          if (next != null && next != value) onChanged(next);
+        },
+      ),
+    );
+  }
+
+  Future<int?> _showEditDialog(BuildContext context, int current) {
+    final controller = TextEditingController(text: current.toString());
+    return showDialog<int>(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          title: const Text('Daily step goal'),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            autofocus: true,
+            decoration: const InputDecoration(
+              suffixText: 'steps',
+              hintText: '10000',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final parsed = int.tryParse(controller.text.trim());
+                if (parsed == null || parsed < 1 || parsed > 100000) {
+                  ScaffoldMessenger.of(dialogCtx).showSnackBar(
+                    const SnackBar(
+                      content: Text('Enter a value between 1 and 100000'),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(dialogCtx, parsed);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
     );
   }
 }
