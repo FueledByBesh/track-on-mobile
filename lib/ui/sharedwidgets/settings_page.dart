@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:trackon_mobile/data/models/user_settings.dart';
 import 'package:trackon_mobile/data/providers/auth_provider.dart';
 import 'package:trackon_mobile/data/providers/permission_provider.dart';
+import 'package:trackon_mobile/data/providers/steps_provider.dart';
 import 'package:trackon_mobile/data/providers/theme_provider.dart';
 import 'package:trackon_mobile/data/services/logger_service.dart';
 import 'package:trackon_mobile/data/services/permission_service.dart';
@@ -397,11 +398,12 @@ class _ActivityTabState extends State<_ActivityTab> {
           value: _settings!.defaultStepGoal,
           onChanged: (next) async {
             final previous = _settings!;
-            // Capture the messenger before the await so the linter is
-            // happy about cross-async context use and the snack works
-            // even if the widget is disposed mid-flight.
+            // Capture before the await so the linter is happy about
+            // cross-async context use and these still work even if the
+            // widget is disposed mid-flight.
             final messenger = ScaffoldMessenger.of(context);
             final users = context.read<UserApiService>();
+            final steps = context.read<StepsProvider>();
             setState(
               () => _settings = previous.copyWith(defaultStepGoal: next),
             );
@@ -409,8 +411,13 @@ class _ActivityTabState extends State<_ActivityTab> {
               final updated = await users.updateMySettings(
                 UserSettings.patch(defaultStepGoal: next),
               );
-              if (!mounted) return;
-              setState(() => _settings = updated);
+              if (mounted) setState(() => _settings = updated);
+              // Push the new goal into StepsProvider so the home page
+              // stats widget updates without waiting for the next sync.
+              // Backend already wrote today's daily_steps.goal in the
+              // same transaction, so this is just keeping mobile state
+              // in sync with what the server already knows.
+              await steps.applyTodayGoal(next);
             } catch (e) {
               Logger.w('SETTINGS', 'Failed to save step goal: $e');
               if (mounted) setState(() => _settings = previous);

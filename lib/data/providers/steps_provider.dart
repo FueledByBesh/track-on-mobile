@@ -57,6 +57,22 @@ class StepsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Apply a new step goal locally without re-syncing. Called by the
+  /// settings UI after a successful PATCH to /api/users/me/settings —
+  /// the backend already updated today's row in the same transaction,
+  /// so we know the new value without a round-trip. Mutates today + the
+  /// matching history entry + cache so the home stats widget reflects
+  /// the change immediately.
+  Future<void> applyTodayGoal(int goal) async {
+    final todayStr = DateTime.now().toLocal().toIso8601String().split('T')[0];
+    _today = _today.copyWith(goal: goal);
+    _history = _history
+        .map((d) => d.date == todayStr ? d.copyWith(goal: goal) : d)
+        .toList();
+    notifyListeners();
+    await _saveToCache();
+  }
+
   // ============ CACHE ============
 
   Future<void> _loadFromCache() async {

@@ -43,6 +43,28 @@ class DailySteps {
     if (lastUpdated != null) 'last_updated': lastUpdated,
   };
 
+  DailySteps copyWith({
+    String? id,
+    String? date,
+    int? stepCount,
+    int? goal,
+    double? progressPercent,
+    double? distanceKm,
+    double? caloriesBurned,
+    String? lastUpdated,
+  }) {
+    return DailySteps(
+      id: id ?? this.id,
+      date: date ?? this.date,
+      stepCount: stepCount ?? this.stepCount,
+      goal: goal ?? this.goal,
+      progressPercent: progressPercent ?? this.progressPercent,
+      distanceKm: distanceKm ?? this.distanceKm,
+      caloriesBurned: caloriesBurned ?? this.caloriesBurned,
+      lastUpdated: lastUpdated ?? this.lastUpdated,
+    );
+  }
+
   factory DailySteps.empty() {
     return DailySteps(
       date: DateTime.now().toIso8601String().split('T')[0],
